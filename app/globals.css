@@ -1,8 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #060606;
+  --foreground: #f2f2f2;
+  --gold-400: #d4af37; /* primary gold */
+  --gold-300: #ffd166; /* lighter gold */
+  --gold-500: #b8860b; /* deeper gold */
+  --card-bg: #0b0b0b;
+  --muted: #a1a1a1;
 }
 
 @theme inline {
@@ -14,8 +19,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #060606;
+    --foreground: #f4f4f5;
   }
 }
 
@@ -23,4 +28,37 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Gold gradient helpers */
+.gold-gradient-text {
+  background: linear-gradient(90deg, var(--gold-500), var(--gold-400), var(--gold-300));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.gold-sheen {
+  background: radial-gradient(1200px 400px at 50% -200px, rgba(212, 175, 55, 0.15), transparent 60%),
+              radial-gradient(600px 300px at 80% 0%, rgba(255, 209, 102, 0.08), transparent 60%);
+}
+
+/* Animated gradient border like Gemini */
+@keyframes shimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.animated-border {
+  background-image: linear-gradient(90deg, var(--gold-500), var(--gold-300), var(--gold-400), var(--gold-500), var(--background));
+  background-size: 200% 200%;
+  animation: shimmer 3s linear infinite;
+}
+
+.card-surface {
+  background: var(--card-bg);
+}
+
+.input-sheen {
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
 }
