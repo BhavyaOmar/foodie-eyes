@@ -7,8 +7,9 @@ export default function Home() {
   return (
     <main className="min-h-dvh bg-black">
       <TopBar />
-      <SearchHero />
       <MoodCards />
+      <SearchHero />
+      
     </main>
   );
 }
