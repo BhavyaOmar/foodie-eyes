@@ -62,3 +62,11 @@ body {
 .input-sheen {
   background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
 }
+/* In globals.css */
+@keyframes progress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.animate-progress-indeterminate {
+  animation: progress 1.5s infinite linear;
+}
