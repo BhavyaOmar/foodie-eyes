@@ -78,12 +78,19 @@ export default function SearchHero({
 
   const { text, isListening, startListening, stopListening, hasSupport } = useSpeechRecognition();
 
-  // 1. Sync Voice to Text
+  // 1. Update query when mood prompt changes
+  useEffect(() => {
+    if (moodPrompt) {
+      setQuery(moodPrompt);
+    }
+  }, [moodPrompt]);
+
+  // 2. Sync Voice to Text
   useEffect(() => {
     if (text) setQuery(text);
   }, [text]);
 
-  // 2. Cycle Loading Messages
+  // 3. Cycle Loading Messages
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (loading) {
