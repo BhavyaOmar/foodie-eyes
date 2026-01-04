@@ -13,6 +13,9 @@ type Place = {
   scraped_content?: string;
   reviews?: string;
   reviewCount?: number;
+  famous_dishes?: string[];
+  match_reason?: string;
+  secret_tip?: string;
 };
 
 type Props = {
@@ -94,8 +97,8 @@ export default function DetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white border border-[var(--border-subtle)] shadow-2xl animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
+      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white border border-[var(--border-subtle)] shadow-2xl animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
         
         {/* Close Button */}
         <button
@@ -181,6 +184,22 @@ export default function DetailModal({
               </div>
             )}
           </div>
+
+          {/* Match Reason */}
+          {place.match_reason && (
+            <div className="bg-orange-50 border-l-4 border-orange-400 p-4 rounded">
+              <p className="text-sm text-orange-900 font-medium mb-1">Why you'll love it:</p>
+              <p className="text-sm text-orange-800">{place.match_reason}</p>
+            </div>
+          )}
+
+          {/* Secret Tip */}
+          {place.secret_tip && (
+            <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded">
+              <p className="text-sm text-amber-900 font-medium mb-1">Secret Tip:</p>
+              <p className="text-sm text-amber-800">{place.secret_tip}</p>
+            </div>
+          )}
 
           {/* Why This Place */}
           {place.scraped_content && (
@@ -274,6 +293,20 @@ export default function DetailModal({
                 </div>
               )}
             </div>
+
+            {/* Google Maps Button */}
+            <button
+              onClick={() => {
+                const mapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(place.name)}/${encodeURIComponent(place.address || '')}`;
+                window.open(mapsUrl, '_blank');
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium bg-orange-500 hover:bg-orange-600 text-white transition"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+              </svg>
+              Find on Maps
+            </button>
           </div>
         </div>
       </div>

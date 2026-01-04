@@ -15,6 +15,9 @@ type Place = {
   scraped_content?: string;
   reviews?: string;
   reviewCount?: number;
+  famous_dishes?: string[];
+  match_reason?: string;
+  secret_tip?: string;
 };
 
 type Props = {
@@ -30,6 +33,7 @@ type Props = {
   onPlaceSelect: (place: Place) => void;
   bookmarks: string[];
   onBookmark: (placeName: string) => void;
+  moodPrompt?: string;
 };
 
 export default function SearchHero({ 
@@ -44,9 +48,10 @@ export default function SearchHero({
   hasSearched,
   onPlaceSelect,
   bookmarks,
-  onBookmark
+  onBookmark,
+  moodPrompt
 }: Props) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(moodPrompt || "");
   const [showFilters, setShowFilters] = useState(false);
   const [fallbackMessage, setFallbackMessage] = useState("");
   
@@ -194,9 +199,7 @@ export default function SearchHero({
     <section className="gold-sheen relative z-20 pb-10">
       
       {/* FILTER BACKDROP */}
-      {showFilters && (
-        <div className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm transition-opacity" />
-      )}
+      {showFilters}
 
       <div className={`mx-auto ${hasSearched ? "max-w-screen-lg" : "max-w-screen-sm sm:max-w-screen-md md:max-w-screen-lg"} px-4 ${hasSearched ? "pt-4 sm:pt-6" : "pt-6 sm:pt-8"} relative z-10`}>
         
@@ -223,7 +226,7 @@ export default function SearchHero({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Try 'Spicy Biryani', 'Date Night', or 'Comfort Food'..."
+              placeholder={moodPrompt ? "Tell us more about what you want..." : "Try 'Spicy Biryani', 'Date Night', or 'Comfort Food'..."}
               className="w-full rounded-xl bg-white border border-[var(--border-subtle)] focus:border-[var(--gold-400)] text-sm sm:text-base text-slate-900 placeholder:text-slate-400 pl-12 pr-32 py-3 outline-none transition shadow-md"
             />
 
@@ -276,7 +279,63 @@ export default function SearchHero({
             </div>
           </div>
 
-          {/* 2. PROGRESS INDICATOR */}
+          {/* 2. ACTIVE FILTER CHIPS */}
+          {(preferences || budget || allergens.length > 0) && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-top-1 duration-200">
+              {preferences && (
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--gold-400)]/10 border border-[var(--gold-400)]/30 text-sm text-slate-700">
+                  <span className="font-medium">Dietary: {preferences}</span>
+                  <button
+                    onClick={() => setPreferences("")}
+                    className="text-slate-500 hover:text-slate-800 transition"
+                    title="Remove filter"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+              
+              {budget && (
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--gold-400)]/10 border border-[var(--gold-400)]/30 text-sm text-slate-700">
+                  <span className="font-medium">Budget: ₹{budget}</span>
+                  <button
+                    onClick={() => setBudget("")}
+                    className="text-slate-500 hover:text-slate-800 transition"
+                    title="Remove filter"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+              
+              {allergens.map((allergen) => (
+                <div
+                  key={allergen}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700"
+                >
+                  <span className="font-medium">No {allergen}</span>
+                  <button
+                    onClick={() => handleAllergenChange(allergen)}
+                    className="text-red-500 hover:text-red-800 transition"
+                    title="Remove filter"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 3. PROGRESS INDICATOR */}
           {loading && (
             <div className="mt-4 animate-in fade-in slide-in-from-top-2 duration-300">
               <div className="flex items-center gap-3 p-3 bg-white border border-[var(--border-subtle)] rounded-xl shadow-lg">
@@ -296,10 +355,10 @@ export default function SearchHero({
             </div>
           )}
 
-          {/* 3. FILTER POPUP */}
+          {/* 4. FILTER POPUP */}
           {showFilters && (
-            <div className="absolute top-full mt-2 w-full z-50 animate-in fade-in zoom-in-95 duration-200">
-               <div className="bg-white backdrop-blur-xl border border-[var(--border-subtle)] rounded-2xl shadow-2xl p-5 ring-1 ring-orange-100">
+            <div className="fixed top-20 left-4 right-4 sm:left-1/2 sm:-translate-x-1/2 sm:top-24 sm:max-w-md z-100 animate-in fade-in zoom-in-95 duration-200">
+               <div className="bg-white border border-[var(--border-subtle)] rounded-2xl shadow-2xl p-5 ring-1 ring-orange-100">
                  <div className="flex justify-between items-center mb-4">
                   <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-widest">Refine Search</h3>
                   <button onClick={() => setShowFilters(false)} className="text-slate-500 hover:text-slate-800">✕</button>
@@ -399,11 +458,17 @@ export default function SearchHero({
           <h2 className="text-lg font-semibold text-slate-800 px-1">Top Recommendations</h2>
           
           <div className="grid gap-4 sm:grid-cols-2">
-            {results.map((place, idx) => (
-              <div key={`${place.name}-${idx}`} className="group relative overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-white p-4 transition hover:border-[var(--gold-400)]/60 hover:bg-orange-50 flex flex-col h-full cursor-pointer hover:shadow-lg hover:shadow-orange-100">
+            {results.map((place, idx) => {
+              const uniqueId = `${place.name}-${idx}`;
+              return (
+              <div 
+                key={uniqueId} 
+                className="group relative overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-white p-4 transition hover:border-[var(--gold-400)]/60 hover:bg-orange-50 flex flex-col h-full cursor-pointer hover:shadow-lg hover:shadow-orange-100"
+                onClick={() => onPlaceSelect(place)}
+              >
                 
                 <div className="flex items-start justify-between gap-2 mb-2">
-                    <h3 className="font-bold text-base text-slate-900 line-clamp-1 cursor-pointer flex-1" onClick={() => onPlaceSelect(place)}>{place.name}</h3>
+                    <h3 className="font-bold text-base text-slate-900 line-clamp-1 flex-1">{place.name}</h3>
                     <div className="flex items-center gap-2 shrink-0">
                       {place.rating && (
                          <span className="flex items-center gap-1 text-xs font-bold text-[var(--gold-500)] bg-[var(--gold-400)]/15 px-2 py-0.5 rounded-md">
@@ -414,10 +479,10 @@ export default function SearchHero({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          onBookmark(place.name);
+                          onBookmark(uniqueId);
                         }}
                         className={`p-1.5 rounded transition ${
-                          bookmarks.includes(place.name)
+                          bookmarks.includes(uniqueId)
                             ? "bg-orange-100 text-[var(--gold-500)]"
                             : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
                         }`}
@@ -436,7 +501,19 @@ export default function SearchHero({
                     </div>
                 </div>
 
-                <p className="text-sm text-slate-600 line-clamp-2 mb-3 flex-1 cursor-pointer" onClick={() => onPlaceSelect(place)}>{place.address || "Address not available"}</p>
+                {/* UPDATED: Famous Dishes - Showing only the FIRST one as 'Must Try' */}
+                {place.famous_dishes && place.famous_dishes.length > 0 && (
+                  <div className="mb-2">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[var(--gold-400)]/10 border border-[var(--gold-400)]/20 text-xs font-medium text-[var(--gold-500)]">
+                      <span>🍽️</span>
+                      <span className="truncate max-w-[200px]">
+                        Must Try: <span className="text-[var(--gold-500)] font-bold">{place.famous_dishes[0]}</span>
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-sm text-slate-600 line-clamp-2 mb-3 flex-1">{place.address || "Address not available"}</p>
                 
                 {place.categories?.length ? (
                     <div className="flex flex-wrap gap-1.5 mb-3">
@@ -449,15 +526,13 @@ export default function SearchHero({
                 ) : null}
                 
                 <div className="mt-auto pt-3 border-t border-[var(--border-subtle)] flex items-center justify-center">
-                    <button
-                      onClick={() => onPlaceSelect(place)}
-                      className="flex-1 text-xs font-medium text-[var(--gold-500)] hover:text-[var(--gold-400)] transition"
-                    >
+                    <span className="flex-1 text-xs font-medium text-[var(--gold-500)] hover:text-[var(--gold-400)] transition cursor-pointer">
                       View Details
-                    </button>
+                    </span>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         </div>
       )}

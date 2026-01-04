@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { onAuthStateChanged, User } from "firebase/auth";
+import { auth } from "@/app/lib/firebase";
 import TopBar from "./components/TopBar";
 import LocationBar from "./components/LocationBar";
 import SearchHero from "./components/SearchHero";
@@ -8,6 +10,8 @@ import MoodCards from "./components/MoodCards";
 import Footer from "./components/Footer";
 import DetailModal from "./components/DetailModal";
 import AuthModal from "./components/AuthModal";
+import { useHistory } from "./hooks/useHistory"; // <--- Import Hook
+import HistoryDrawer from "./components/HistoryDrawer"; // <--- Import Drawer
 
 type Place = {
   name: string;
@@ -20,9 +24,15 @@ type Place = {
   scraped_content?: string;
   reviews?: string;
   reviewCount?: number;
+  famous_dishes?: string[];
+  match_reason?: string;
+  secret_tip?: string;
 };
 
 export default function Home() {
+  const { history, addToHistory } = useHistory(); // <--- Initialize Hook
+  const [user, setUser] = useState<User | null>(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [location, setLocation] = useState("");
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState("");
@@ -32,27 +42,56 @@ export default function Home() {
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [bookmarks, setBookmarks] = useState<string[]>([]);
+  const [moodPrompt, setMoodPrompt] = useState("");
 
-  // Load location and bookmarks from localStorage on mount
+  // Track auth state and load user-specific data
   useEffect(() => {
-    const savedLocation = localStorage.getItem("foodieLocation");
-    const savedBookmarks = localStorage.getItem("foodieBookmarks");
-    const savedAuth = localStorage.getItem("foodieAuth");
-    
-    if (savedLocation) setLocation(savedLocation);
-    if (savedBookmarks) setBookmarks(JSON.parse(savedBookmarks));
-    if (savedAuth) setIsSignedIn(true);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsSignedIn(!!currentUser);
+
+      // Load user-specific location if logged in
+      if (currentUser) {
+        const userLocationKey = `foodieLocation-${currentUser.uid}`;
+        const savedLocation = localStorage.getItem(userLocationKey);
+        if (savedLocation) {
+          setLocation(savedLocation);
+        } else {
+          setLocation(""); // Clear location when switching users
+        }
+      } else {
+        setLocation(""); // Clear location when logged out
+      }
+
+      // Load bookmarks (keeping them per user as well)
+      if (currentUser) {
+        const userBookmarksKey = `foodieBookmarks-${currentUser.uid}`;
+        const savedBookmarks = localStorage.getItem(userBookmarksKey);
+        if (savedBookmarks) {
+          setBookmarks(JSON.parse(savedBookmarks));
+        } else {
+          setBookmarks([]);
+        }
+      } else {
+        setBookmarks([]);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  // Persist location to localStorage
+  // Persist location to localStorage per user
   const handleLocationChange = (newLocation: string) => {
     setLocation(newLocation);
-    localStorage.setItem("foodieLocation", newLocation);
+    if (user) {
+      const userLocationKey = `foodieLocation-${user.uid}`;
+      localStorage.setItem(userLocationKey, newLocation);
+    }
   };
 
-  // Handle bookmarking
+  // Handle bookmarking per user
   const handleBookmark = (placeName: string) => {
-    if (!isSignedIn) {
+    if (!isSignedIn || !user) {
       setShowAuthModal(true);
       return;
     }
@@ -62,12 +101,12 @@ export default function Home() {
       : [...bookmarks, placeName];
     
     setBookmarks(updated);
-    localStorage.setItem("foodieBookmarks", JSON.stringify(updated));
+    const userBookmarksKey = `foodieBookmarks-${user.uid}`;
+    localStorage.setItem(userBookmarksKey, JSON.stringify(updated));
   };
 
   const handleSignIn = () => {
-    setIsSignedIn(true);
-    localStorage.setItem("foodieAuth", "true");
+    // User is automatically set via onAuthStateChanged hook
     setShowAuthModal(false);
   };
 
@@ -102,12 +141,18 @@ export default function Home() {
       }
     );
   };
+  const handlePlaceSelect = (place: any) => {
+     // 1. Save to History (Fire & Forget)
+     addToHistory(place);
+     
+     // 2. Open your details modal/view
+     // setSelectedPlace(place); 
+  };
 
   return (
     <main className="min-h-dvh bg-white text-slate-900 flex flex-col">
       <TopBar 
-        isSignedIn={isSignedIn}
-        onSignIn={() => setShowAuthModal(true)}
+        location={location}
       />
       <LocationBar
         location={location}
@@ -115,7 +160,7 @@ export default function Home() {
         onRequestLocation={requestLocation}
         onLocationChange={handleLocationChange}
       />
-      {!hasSearched && <MoodCards />}
+      {!hasSearched && <MoodCards onMoodSelect={setMoodPrompt} selectedMoodPrompt={moodPrompt} />}
       <div className="flex-1">
         <SearchHero 
           location={location}
@@ -130,6 +175,7 @@ export default function Home() {
           onPlaceSelect={setSelectedPlace}
           bookmarks={bookmarks}
           onBookmark={handleBookmark}
+          moodPrompt={moodPrompt}
         />
       </div>
       <Footer />

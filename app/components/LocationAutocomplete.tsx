@@ -99,17 +99,17 @@ export default function LocationAutocomplete({
           value={value} // <--- Controlled by Parent
           onChange={handleInputChange}
           placeholder="Enter location (e.g. Connaught Place)"
-          className="w-full bg-zinc-900/80 border border-zinc-800 rounded-lg py-2 pl-9 pr-3 text-sm text-white focus:border-[var(--gold-400)] focus:outline-none transition-colors"
+          className="w-full bg-white border border-zinc-300 rounded-lg py-2 pl-9 pr-3 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-[var(--gold-400)] focus:outline-none transition-colors"
         />
       </div>
 
       {isOpen && suggestions.length > 0 && (
-        <ul className="absolute z-50 w-full mt-1 bg-[#0a0a0a] border border-zinc-800 rounded-lg shadow-xl max-h-60 overflow-y-auto">
+        <ul className="absolute z-50 w-full mt-1 bg-white border border-zinc-300 rounded-lg shadow-xl max-h-60 overflow-y-auto">
           {suggestions.map((place: any) => (
             <li
               key={place.place_id}
               onClick={() => handleSelect(place)}
-              className="px-4 py-3 text-sm text-zinc-300 hover:bg-zinc-800 cursor-pointer border-b border-zinc-800/50 last:border-0 flex items-start gap-2"
+              className="px-4 py-3 text-sm text-zinc-700 hover:bg-zinc-100 cursor-pointer border-b border-zinc-200 last:border-0 flex items-start gap-2"
             >
               <span className="mt-0.5 text-zinc-500">📍</span>
               <span className="line-clamp-2">{place.display_name}</span>
