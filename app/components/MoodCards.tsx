@@ -7,13 +7,27 @@ type Props = {
 };
 
 const items = [
-  { id: 1, title: "I am hungry", prompt: "Show me places where I can get good food quickly" },
-  { id: 2, title: "I am in a new place and I wanna explore local cuisines", prompt: "Find popular local cuisine restaurants and street food" },
-  { id: 3, title: "I want some budget friendly food", prompt: "Find affordable budget-friendly food options" },
-  { id: 4, title: "I am travelling and looking for some food points in my route", prompt: "Find good food restaurants along the way" },
-  { id: 5, title: "I wanna explore best street food options here", prompt: "Show me the best street food vendors and stalls" },
+  { 
+    id: 1, 
+    title: "Explore Local Gems", 
+    prompt: "Show me authentic local cuisine, famous street food spots, and hidden gems in this area." 
+  },
+  { 
+    id: 2, 
+    title: "Quick & Tasty", 
+    prompt: "Find highly-rated places nearby where I can get good food fast." 
+  },
+  { 
+    id: 3, 
+    title: "Budget Friendly", 
+    prompt: "Find delicious and affordable food options that offer great value for money." 
+  },
+  { 
+    id: 4, 
+    title: "Trending & Top Rated", 
+    prompt: "Show me the most popular restaurants and viral food spots in the city right now." 
+  }
 ];
-
 export default function MoodCards({ onMoodSelect, selectedMoodPrompt }: Props) {
   return (
     <section>

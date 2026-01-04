@@ -160,6 +160,7 @@ export default function Home() {
         onRequestLocation={requestLocation}
         onLocationChange={handleLocationChange}
       />
+      <div className="gap-4">&nbsp;</div>
       {!hasSearched && <MoodCards onMoodSelect={setMoodPrompt} selectedMoodPrompt={moodPrompt} />}
       <div className="flex-1">
         <SearchHero 
