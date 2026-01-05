@@ -9,7 +9,7 @@ type RawPlace = {
 };
 
 type SearchResult = {
-	name: string;
+	title: string;
 	address?: string;
 	rating?: number;
 	website?: string;
@@ -51,7 +51,7 @@ export async function searchPlaces(query: string, location: string): Promise<Sea
 	const places: RawPlace[] = data?.places ?? [];
 
 	return places.map((place) => ({
-		name: place.title,
+		title: place.title,
 		address: place.address,
 		rating: place.rating,
 		website: place.website,
