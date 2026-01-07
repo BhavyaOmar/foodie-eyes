@@ -8,7 +8,7 @@ import {
   serverTimestamp 
 } from "firebase/firestore";
 import { db } from "@/app/lib/firebase";
-import { User } from "firebase/auth";
+import { useUserAuth } from "@/app/context/AuthContext"; // Import the Context Hook
 
 const MAX_BOOKMARKS = 10;
 
@@ -38,13 +38,20 @@ function cleanObject<T extends Record<string, any>>(obj: T): Partial<T> {
   return cleaned;
 }
 
-export function useBookmarks(user: User | null) {
+// 1. Removed 'user' parameter. It now comes from Context directly.
+export function useBookmarks() {
+  const { user, loading: authLoading } = useUserAuth(); // 2. Get 'loading' state
   const [bookmarks, setBookmarks] = useState<BookmarkPlace[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Listen to real-time updates from Firestore
   useEffect(() => {
+    // 3. THE FIX: Stop everything if Auth is still loading
+    if (authLoading) {
+      return; 
+    }
+
     if (!user) {
       console.log('📍 useBookmarks: No user, resetting bookmarks');
       setBookmarks([]);
@@ -72,14 +79,17 @@ export function useBookmarks(user: User | null) {
       },
       (err) => {
         console.error("Error fetching bookmarks:", err);
-        setError("Failed to load bookmarks");
+        // Only set error if it's NOT a permission error (which shouldn't happen now anyway)
+        if (err.code !== 'permission-denied') {
+            setError("Failed to load bookmarks");
+        }
         setBookmarks([]);
         setLoading(false);
       }
     );
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, authLoading]); // 4. Add authLoading to dependencies
 
   // Check if a place is bookmarked
   const isBookmarked = (placeName: string): boolean => {
@@ -146,7 +156,6 @@ export function useBookmarks(user: User | null) {
       
       const errorMessage = err?.message || err?.code || "Failed to save bookmark";
       
-      // Check for common Firebase errors
       if (err?.code === 'permission-denied') {
         return { success: false, error: "Permission denied. Please check Firestore rules." };
       }
