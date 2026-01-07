@@ -4,24 +4,26 @@ import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { auth } from "@/app/lib/firebase";
 import AuthModal from "./AuthModal";
 import SideDrawer from "./SideDrawer";
-import { MdHistory, MdBookmark } from "react-icons/md";
-// --- Mock Data Imports (Replace with your actual hooks later) ---
-// import { useHistory } from "@/app/hooks/useHistory";
-// import { useBookmarks } from "@/app/hooks/useBookmarks";
+import { MdBookmark } from "react-icons/md";
+import Image from 'next/image';
+import { useBookmarks } from "@/app/hooks/useBookmarks";
 
 type TopBarProps = {
   location?: string;
+  onReset?: () => void;
 };
 
-export default function TopBar({ location = "" }: TopBarProps) {
+export default function TopBar({ location = "", onReset }: TopBarProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
   
+  // Bookmarks hook
+  const { bookmarks, removeBookmark } = useBookmarks(user);
+  
   // Modals & Drawers State
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isBookmarksOpen, setIsBookmarksOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
 
@@ -33,6 +35,9 @@ export default function TopBar({ location = "" }: TopBarProps) {
       await signOut(auth);
       setIsProfileMenuOpen(false);
       setIsLogoutConfirmOpen(false);
+      // Reset the app state and reload page
+      if (onReset) onReset();
+      window.location.reload();
     } catch (error) {
       console.error("Logout failed:", error);
     }
@@ -68,10 +73,18 @@ export default function TopBar({ location = "" }: TopBarProps) {
           <div className="flex items-center justify-between gap-4">
             
             {/* LOGO */}
-            <div className="flex items-center gap-2">
-              <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-[var(--gold-300)] via-[var(--gold-400)] to-[var(--gold-500)] shadow-sm"/>
-              <span className="gold-gradient-text text-xl font-bold tracking-tight">Foodie Eyes</span>
-            </div>
+            <button 
+              onClick={() => {
+                if (onReset) onReset();
+              }}
+              className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer"
+            >
+              <Image
+              src="/foodie-eyes.svg"
+              alt="foodie-eyes"
+              width={200}
+              height={180}/>
+            </button>
 
             {/* ACTION AREA */}
             <nav className="flex items-center gap-4 relative">
@@ -87,7 +100,7 @@ export default function TopBar({ location = "" }: TopBarProps) {
                     className={`relative p-0.5 rounded-full transition-all ${isProfileMenuOpen ? 'ring-2 ring-[var(--gold-400)]' : 'hover:ring-2 hover:ring-slate-200'}`}
                   >
                     <img 
-                      src={user.photoURL || `https://api.dicebear.com/9.x/adventurer/svg?seed=${user.email}`} 
+                      src={`https://api.dicebear.com/9.x/adventurer/svg?seed=${user.displayName?.split(" ")[0] || user.email}`} 
                       alt="Profile" 
                       className="w-11 h-11 rounded-full border border-white shadow-md bg-slate-100 object-cover"
                     />
@@ -123,14 +136,6 @@ export default function TopBar({ location = "" }: TopBarProps) {
 
                       {/* Menu Items */}
                       <div className="p-2 space-y-1">
-                        <button 
-                          onClick={() => { setIsHistoryOpen(true); setIsProfileMenuOpen(false); }}
-                          className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-[var(--gold-600)] rounded-xl transition-colors text-left"
-                        >
-                          <MdHistory size={24} color="black" />
-        <span>History</span>
-                        </button>
-                        
                         <button 
                           onClick={() => { setIsBookmarksOpen(true); setIsProfileMenuOpen(false); }}
                           className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-[var(--gold-600)] rounded-xl transition-colors text-left"
@@ -175,32 +180,90 @@ export default function TopBar({ location = "" }: TopBarProps) {
         onClose={() => setIsAuthModalOpen(false)} 
       />
 
-      {/* 2. History Side Drawer */}
-      <SideDrawer 
-        title="Recently Viewed" 
-        isOpen={isHistoryOpen} 
-        onClose={() => setIsHistoryOpen(false)}
-      >
-        {/* Placeholder Content */}
-        <div className="text-center text-slate-400 mt-10">
-           <p className="text-4xl mb-2">📜</p>
-           <p>Your browsing history will appear here.</p>
-           {/* You will map through your historyItems here later */}
-        </div>
-      </SideDrawer>
-
-      {/* 3. Bookmarks Side Drawer */}
+      {/* 2. Bookmarks Side Drawer */}
       <SideDrawer 
         title="Saved Bookmarks" 
         isOpen={isBookmarksOpen} 
         onClose={() => setIsBookmarksOpen(false)}
       >
-        {/* Placeholder Content */}
-        <div className="text-center text-slate-400 mt-10">
-           <p className="text-4xl mb-2">🔖</p>
-           <p>Your saved places will appear here.</p>
-           {/* You will map through your savedPlaces here later */}
-        </div>
+        {bookmarks.length === 0 ? (
+          <div className="text-center text-slate-400 mt-10">
+            <p className="text-4xl mb-2">🔖</p>
+            <p>Your saved places will appear here.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {bookmarks.map((bookmark, index) => (
+              <div 
+                key={`${bookmark.name}-${index}`}
+                className="bg-white border border-slate-200 rounded-xl p-4 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-slate-800 text-sm mb-1 truncate">
+                      {bookmark.name}
+                    </h3>
+                    
+                    {bookmark.address && (
+                      <p className="text-xs text-slate-500 mb-2 line-clamp-2">
+                        {bookmark.address}
+                      </p>
+                    )}
+                    
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {bookmark.rating && (
+                        <span className="flex items-center gap-1 text-xs font-semibold text-[var(--gold-500)]">
+                          ⭐ {bookmark.rating}
+                        </span>
+                      )}
+                      
+                      {bookmark.categories && bookmark.categories.length > 0 && (
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wide">
+                          {bookmark.categories[0]}
+                        </span>
+                      )}
+                    </div>
+                    
+                    {bookmark.famous_dishes && bookmark.famous_dishes.length > 0 && (
+                      <div className="mt-2 flex items-center gap-1 text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded-md w-fit">
+                        <span>🍽️</span>
+                        <span className="truncate">{bookmark.famous_dishes[0]}</span>
+                      </div>
+                    )}
+                    
+                    {/* Google Maps Button */}
+                    <button
+                      onClick={() => {
+                        const query = encodeURIComponent(
+                          `${bookmark.name}${bookmark.address ? ` ${bookmark.address}` : ''}`
+                        );
+                        window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+                      }}
+                      className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                      </svg>
+                      See in Google Maps
+                    </button>
+                  </div>
+                  
+                  <button
+                    onClick={async () => {
+                      await removeBookmark(bookmark.name);
+                    }}
+                    className="shrink-0 p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Remove bookmark"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </SideDrawer>
 
       {/* 4. Logout Confirmation Modal */}

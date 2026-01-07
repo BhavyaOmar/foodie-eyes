@@ -15,7 +15,8 @@ type Place = {
   reviewCount?: number;
   famous_dishes?: string[];
   match_reason?: string;
-  secret_tip?: string;
+  note?: string;
+  tip?: string;
 };
 
 type Props = {
@@ -193,19 +194,19 @@ export default function DetailModal({
             </div>
           )}
 
-          {/* Secret Tip */}
-          {place.secret_tip && (
-            <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded">
-              <p className="text-sm text-amber-900 font-medium mb-1">Secret Tip:</p>
-              <p className="text-sm text-amber-800">{place.secret_tip}</p>
+          {/* Note (negatives or cautions) */}
+          {place.note && (
+            <div className="bg-slate-50 border-l-4 border-slate-300 p-4 rounded">
+              <p className="text-sm text-slate-900 font-medium mb-1">Note:</p>
+              <p className="text-sm text-slate-700">{place.note}</p>
             </div>
           )}
 
-          {/* Why This Place */}
-          {place.scraped_content && (
-            <div className="pt-4 border-t border-[var(--border-subtle)] space-y-2">
-              <h3 className="text-xs font-semibold text-slate-500 uppercase">Why this place</h3>
-              <p className="text-slate-700 leading-6 text-sm whitespace-pre-line">{place.scraped_content}</p>
+          {/* Tip */}
+          {place.tip && (
+            <div className="bg-amber-50 border-l-4 border-amber-400 p-4 rounded">
+              <p className="text-sm text-amber-900 font-medium mb-1">Tip:</p>
+              <p className="text-sm text-amber-800">{place.tip}</p>
             </div>
           )}
 
