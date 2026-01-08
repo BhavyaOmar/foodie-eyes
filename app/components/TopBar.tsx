@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { onAuthStateChanged, signOut, User } from "firebase/auth";
-import { auth } from "@/app/lib/firebase";
+import { useUserAuth } from "@/app/context/AuthContext"; // 1. Use Global Auth
 import AuthModal from "./AuthModal";
 import SideDrawer from "./SideDrawer";
 import { MdBookmark } from "react-icons/md";
@@ -14,12 +13,12 @@ type TopBarProps = {
 };
 
 export default function TopBar({ location = "", onReset }: TopBarProps) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  // 2. Get User & Loading from Context (No more manual listener needed!)
+  const { user, loading, logOut } = useUserAuth(); 
   const [mounted, setMounted] = useState(false);
   
-  // Bookmarks hook
-  const { bookmarks, removeBookmark } = useBookmarks(user);
+  // 3. FIXED: No argument needed here anymore
+  const { bookmarks, removeBookmark } = useBookmarks();
   
   // Modals & Drawers State
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -32,7 +31,7 @@ export default function TopBar({ location = "", onReset }: TopBarProps) {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await logOut(); // Use context logout
       setIsProfileMenuOpen(false);
       setIsLogoutConfirmOpen(false);
       // Reset the app state and reload page
@@ -45,11 +44,7 @@ export default function TopBar({ location = "", onReset }: TopBarProps) {
 
   useEffect(() => {
     setMounted(true);
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
-
+    
     // Close menu when clicking outside
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -59,7 +54,6 @@ export default function TopBar({ location = "", onReset }: TopBarProps) {
     document.addEventListener("mousedown", handleClickOutside);
 
     return () => {
-      unsubscribe();
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
@@ -80,10 +74,12 @@ export default function TopBar({ location = "", onReset }: TopBarProps) {
               className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer"
             >
               <Image
-              src="/foodie-eyes.svg"
-              alt="foodie-eyes"
-              width={200}
-              height={180}/>
+                src="/foodie-eyes.svg"
+                alt="foodie-eyes"
+                width={200}
+                height={180}
+                priority // Added for LCP
+              />
             </button>
 
             {/* ACTION AREA */}
@@ -141,7 +137,7 @@ export default function TopBar({ location = "", onReset }: TopBarProps) {
                           className="w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-[var(--gold-600)] rounded-xl transition-colors text-left"
                         >
                           <MdBookmark size={24} color="orange" />
-        <span>Saved</span>
+                          <span>Saved</span>
                         </button>
                       </div>
 
@@ -237,7 +233,7 @@ export default function TopBar({ location = "", onReset }: TopBarProps) {
                         const query = encodeURIComponent(
                           `${bookmark.name}${bookmark.address ? ` ${bookmark.address}` : ''}`
                         );
-                        window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank');
+                        window.open(`http://googleusercontent.com/maps.google.com/6{query}`, '_blank');
                       }}
                       className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
                     >

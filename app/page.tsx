@@ -1,8 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { onAuthStateChanged, User } from "firebase/auth";
-import { auth } from "@/app/lib/firebase";
+// 1. Remove manual auth imports
+// import { onAuthStateChanged, User } from "firebase/auth";
+// import { auth } from "@/app/lib/firebase";
+
+// 2. Import Global Auth Context
+import { useUserAuth } from "@/app/context/AuthContext";
+
 import TopBar from "./components/TopBar";
 import LocationBar from "./components/LocationBar";
 import SearchHero from "./components/SearchHero";
@@ -12,7 +17,7 @@ import DetailModal from "./components/DetailModal";
 import AuthModal from "./components/AuthModal";
 import { useHistory } from "./hooks/useHistory";
 import { useBookmarks } from "./hooks/useBookmarks";
-import HistoryDrawer from "./components/HistoryDrawer";
+// import HistoryDrawer from "./components/HistoryDrawer"; // Unused import based on code
 
 type Place = {
   name: string;
@@ -32,43 +37,44 @@ type Place = {
 };
 
 export default function Home() {
+  // 3. Use Global Auth (Fixes sync issues)
+  const { user, loading } = useUserAuth();
+  const isSignedIn = !!user;
+
+  // 4. FIXED: Remove 'user' argument (It now uses Context internally)
+  const { bookmarks, isBookmarked, toggleBookmark, maxBookmarks } = useBookmarks();
+  
   const { history, addToHistory } = useHistory();
-  const [user, setUser] = useState<User | null>(null);
-  const { bookmarks, isBookmarked, toggleBookmark, maxBookmarks } = useBookmarks(user);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  // const [isHistoryOpen, setIsHistoryOpen] = useState(false); // Unused
+  
   const [location, setLocation] = useState("");
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [results, setResults] = useState<Place[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
-  const [isSignedIn, setIsSignedIn] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [bookmarkError, setBookmarkError] = useState<string | null>(null);
   const [moodPrompt, setMoodPrompt] = useState("");
 
-  // Track auth state and load user-specific data
+  // 5. Updated Effect: Load User Location ONLY when Auth is ready
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setIsSignedIn(!!currentUser);
+    if (loading) return; // Wait for Firebase to finish checking
 
-      // Load user-specific location if logged in
-      if (currentUser) {
-        const userLocationKey = `foodieLocation-${currentUser.uid}`;
-        const savedLocation = localStorage.getItem(userLocationKey);
-        if (savedLocation) {
-          setLocation(savedLocation);
-        } else {
-          setLocation(""); // Clear location when switching users
-        }
+    if (user) {
+      // User is logged in -> Load their specific location
+      const userLocationKey = `foodieLocation-${user.uid}`;
+      const savedLocation = localStorage.getItem(userLocationKey);
+      if (savedLocation) {
+        setLocation(savedLocation);
       } else {
-        setLocation(""); // Clear location when logged out
+        setLocation(""); 
       }
-    });
-
-    return () => unsubscribe();
-  }, []);
+    } else {
+      // User is logged out -> Clear location
+      setLocation("");
+    }
+  }, [user, loading]);
 
   // Persist location to localStorage per user
   const handleLocationChange = (newLocation: string) => {
@@ -81,7 +87,7 @@ export default function Home() {
 
   // Handle bookmarking with Firebase
   const handleBookmark = async (place: Place) => {
-    if (!isSignedIn || !user) {
+    if (!isSignedIn) {
       setShowAuthModal(true);
       return;
     }
@@ -117,7 +123,6 @@ export default function Home() {
     setShowAuthModal(false);
   };
 
-
   const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
     try {
       const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
@@ -149,13 +154,12 @@ export default function Home() {
       }
     );
   };
-  const handlePlaceSelect = (place: any) => {
-     // 1. Save to History (Fire & Forget)
-     addToHistory(place);
-     
-     // 2. Open your details modal/view
-     // setSelectedPlace(place); 
-  };
+
+  // Note: This function was defined but unused in your snippet
+  // const handlePlaceSelect = (place: any) => {
+  //    addToHistory(place);
+  //    setSelectedPlace(place); 
+  // };
 
   return (
     <main className="min-h-dvh bg-white text-slate-900 flex flex-col">
@@ -182,7 +186,10 @@ export default function Home() {
           onSearchChange={setHasSearched}
           results={results}
           hasSearched={hasSearched}
-          onPlaceSelect={setSelectedPlace}
+          onPlaceSelect={(place) => {
+             addToHistory(place);
+             setSelectedPlace(place);
+          }}
           bookmarks={bookmarks.map(b => b.name)}
           onBookmark={handleBookmark}
           moodPrompt={moodPrompt}
