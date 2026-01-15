@@ -38,8 +38,8 @@ export default function DetailModal({
   const [copiedLink, setCopiedLink] = useState(false);
 
   const handleCopyLink = async () => {
-    const link = `${window.location.origin}?place=${encodeURIComponent(place.name)}`;
-    await navigator.clipboard.writeText(link);
+    const mapsUrl = `https://www.google.com/maps/search/${encodeURIComponent(place.name)}/${encodeURIComponent(place.address || '')}`;
+    await navigator.clipboard.writeText(mapsUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };
