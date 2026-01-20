@@ -229,6 +229,18 @@ export default function SearchHero({
       const data = await response.json();
       console.log("📥 /api/agent response", { status: response.status, ok: response.ok, data });
 
+      // Handle non-food items (400 error)
+      if (response.status === 400 && data.context?.is_food_related === false) {
+        setError(data.context.message || "Please enter a food or drink item.");
+        onResultsChange([]);
+        onSearchChange(false);
+        return;
+      }
+
+      if (data.context?.was_corrected) {
+        setFallbackMessage(`Showing results for "${data.context.corrected_term.toLowerCase()}" instead of "${query.toLowerCase()}"`);
+      }
+      
       // Handle 404 specifically
       if (response.status === 404) {
         const similar = data.similarItems || data.suggestions || [];

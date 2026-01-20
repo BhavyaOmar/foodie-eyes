@@ -11,31 +11,25 @@ const categories = [
     id: "biryani", 
     title: "Biryani", 
     image: "https://images.unsplash.com/photo-1589302168068-964664d93dc0?auto=format&fit=crop&w=200&q=80",
-    prompt: "Best authentic Biryani places nearby" 
+    prompt: "Biryani" 
   },
   { 
     id: "pizza", 
     title: "Pizza", 
     image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=200&q=80", 
-    prompt: "Authentic Italian Pizza and woodfired pizza" 
+    prompt: "Pizza" 
   },
   { 
     id: "burger", 
     title: "Burger", 
     image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=200&q=80", 
-    prompt: "Juicy gourmet burgers and fries" 
+    prompt: "Burger" 
   },
   { 
     id: "north-indian", 
     title: "North Indian", 
     image: "https://images.unsplash.com/photo-1631452180519-c014fe946bc7?auto=format&fit=crop&w=200&q=80", 
-    prompt: "North Indian curry naan and butter chicken" 
-  },
-  { 
-    id: "rolls", 
-    title: "Rolls", 
-    image: "https://images.unsplash.com/photo-1626700051175-6818013e1d4f?auto=format&fit=crop&w=200&q=80", 
-    prompt: "Kathi rolls and wraps street food" 
+    prompt: "North Indian" 
   },
   { 
     id: "chinese", 
@@ -54,7 +48,7 @@ const categories = [
     id: "coffee", 
     title: "Coffee", 
     image: "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=200&q=80", 
-    prompt: "Cozy cafe with good coffee and ambiance" 
+    prompt: "coffee" 
   },
   { 
     id: "south-indian", 

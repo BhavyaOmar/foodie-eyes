@@ -57,7 +57,7 @@ async function searchPlaces(query: string, location: string): Promise<Place[]> {
   if (query.includes(",") || query.includes(" and ")) {
      const rawParts = query.split(/,| and /);
      const cleanParts = rawParts
-       .map(s => s.replace(/hidden gems|authentic|famous|best|top|places/gi, "").trim())
+       .map(s => s.replace(/hidden gems|authentic|famous|best|top|places|find|search/gi, "").trim())
        .filter(s => s.length > 2);
 
      if (cleanParts.length > 0) queries = cleanParts;
@@ -133,25 +133,36 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { query, userLocation } = body;
 
+    // --- STEP 1: GROQ (REFINE & VALIDATE) ---
     const refinedData = await refineQuery(query, userLocation || "India");
-    let optimizedQuery = query;
-
-    // --- STEP 1: GROQ (REFINE) only if raw query search failed---
-    if(
-      refinedData?.searchQuery  && 
-      refinedData.searchQuery.toLowerCase().includes(query.toLowerCase())
-    ){
-      optimizedQuery=refinedData.searchQuery;
+    
+    console.log("🔍 Food Validation:", { query, is_food: refinedData.is_food, response: refinedData.searchQuery });
+    
+    // Check if the query is about food
+    if (refinedData.is_food === false) {
+      return NextResponse.json({
+        status: "error",
+        data: [],
+        context: {
+          message: refinedData.searchQuery || "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.",
+          is_food_related: false
+        }
+      }, { status: 400 });
     }
-    const locationContext = refinedData?.locationString || userLocation || "India";
 
-    optimizedQuery = optimizedQuery.replace(/[|"]/g, "").trim();
+    let optimizedQuery = refinedData.searchQuery || query;
+    const locationContext = refinedData.locationString || userLocation || "India";
+
+    optimizedQuery = optimizedQuery.replace(/[|"]/g, "").trim().toLowerCase();
 
     console.log("🧠 Search Intent:", {
-  raw: query,
-  optimized: optimizedQuery,
-  location: locationContext
-});
+      raw: query,
+      optimized: optimizedQuery,
+      location: locationContext,
+      is_food: refinedData.is_food,
+      was_corrected: refinedData.was_corrected,
+      corrected_term: refinedData.corrected_term
+    });
 
     // --- STEP 2: SERPER (SEARCH) ---
     let places = await searchPlaces(optimizedQuery, locationContext);
@@ -178,10 +189,10 @@ export async function POST(req: NextRequest) {
     const alternatives: Place[] = [];
     let fallbackMessage = null;
 
-    if (mainSubject) {
+    if (mainSubject && places) {
       // Sort places into exact keyword matches vs others
       places.forEach(place => {
-        const placeStr = JSON.stringify(place).toLowerCase();
+         const placeStr = JSON.stringify(place).toLowerCase();
         if (placeStr.includes(mainSubject.toLowerCase())) {
           exactMatches.push(place);
         } else {
@@ -196,7 +207,7 @@ export async function POST(req: NextRequest) {
         // If we found NOTHING, show alternatives and set a warning message
         places = alternatives;
         if (places.length > 0) {
-          fallbackMessage = `We couldn't find exact matches for "${mainSubject}" in this area. Here are some popular alternatives instead.`;
+          fallbackMessage = `We couldn't find exact matches for "${mainSubject.toLowerCase()}" in this area. Here are some popular alternatives instead.`;
         }
       }
     }
@@ -220,33 +231,29 @@ export async function POST(req: NextRequest) {
     const finalVerdict = await analyzePlaces(enrichedPlaces, query);
 
     // --- STEP 5: MERGE AI INSIGHTS ---
-    const cleanedRecommendations = (finalVerdict.recommendations || enrichedPlaces).map((rec: any) => {
-      const original = enrichedPlaces.find(
-        (p) => p.title?.toLowerCase() === rec.name?.toLowerCase()
-      ) || enrichedPlaces.find((p) => p.title?.toLowerCase().includes((rec.name || '').toLowerCase())) || enrichedPlaces[0];
+const finalAnalysis = finalVerdict.place_analysis || [];
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { scraped_content, ...placeData } = original || {};
+const cleanedRecommendations = finalAnalysis.map((rec: any) => {
+  const original = enrichedPlaces.find(
+    (p) => p.title?.toLowerCase() === rec.name?.toLowerCase()
+  ) || enrichedPlaces.find((p) => p.title?.toLowerCase().includes((rec.name || '').toLowerCase())) || enrichedPlaces[0];
 
-      const cleanedDishes = Array.isArray(rec.famous_dishes)
-        ? rec.famous_dishes.filter((d: string) => d && /[a-zA-Z]/.test(d) && d.length <= 80 && !/awesome|great|nice|good food/i.test(d))
-        : placeData?.famous_dishes;
-
-      return {
-        ...placeData,
-        name: rec.name || placeData?.title || placeData?.name,
-        address: placeData?.address || rec.address,
-        rating: placeData?.rating ?? rec.rating,
-        website: placeData?.website || rec.website,
-        phone: placeData?.phone || rec.phone,
-        link: placeData?.link || rec.link,
-        categories: placeData?.categories || rec.categories,
-        match_reason: rec.match_reason || rec.why_love,
-        note: rec.note,
-        famous_dishes: cleanedDishes,
-        tip: rec.tip || rec.Tip,
-      };
-    });
+  return {
+    ...original,
+    name: rec.name || original?.title || original?.name,
+    address: original?.address || rec.address,
+    rating: original?.rating ?? rec.rating,
+    website: original?.website || rec.website,
+    phone: original?.phone || rec.phone,
+    link: original?.link || rec.link,
+    categories: original?.categories || rec.categories,
+    match_reason: rec.match_reason || rec.why_love || "",
+    note: rec.note ,
+    famous_dishes: Array.isArray(rec.famous_dishes) ? rec.famous_dishes.slice(0, 5) : [],
+    tip: rec.tip || rec.Tip || "",
+    is_relevant: rec.is_relevant ?? true,
+  };
+});
 
     return NextResponse.json({
       status: "success",
@@ -255,7 +262,9 @@ export async function POST(req: NextRequest) {
         original_query: query, 
         location_used: locationContext,
         isFallback: !!fallbackMessage, // Flag for frontend
-        message: fallbackMessage       // The warning message
+        message: fallbackMessage,
+        was_corrected: refinedData.was_corrected,
+        corrected_term: refinedData.corrected_term       // The warning message
       }
     });
 

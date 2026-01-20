@@ -17,44 +17,73 @@ function cleanAndParseJSON(text: string,fallback: any={}): any {
 // 1. REFINE QUERY (The Brain - Groq Edition)
 export async function refineQueryWithGroq(userPrompt: string, locationContext: string) {
   const prompt = `
-    You are a food intent classifier.
-    USER INPUT: "${userPrompt}"
-    LOCATION: "${locationContext}"
+You are a STRICT food intent classifier. Your ONLY job is to identify food, drinks, or dining-related queries.
 
-    Task:
-- Extract ONLY a food or drink category that best fits the mood.
-- Do NOT include restaurant names.
-- Do NOT include adjectives alone.
-- If unclear, return "food".
+USER INPUT: "${userPrompt}"
+LOCATION: "${locationContext}"
 
-Examples:
-Input: "it's a rainy day and I want something warm"
-Output: soup
+CRITICAL RULES:
+1. ANALYZE INTENT - Answer ONE question: "Is this about eating, drinking, or dining?"
+   
+   ✅ FOOD/DRINK (is_food: true):
+   - Actual food: Pizza, Burger, Biryani, Pasta, Sushi, Salad, Sandwich
+   - Drinks: Coffee, Tea, Beer, Wine, Juice, Water, Smoothie, Cocktail
+   - Food moods: Hungry, Craving, Date night, Breakfast, Late-night munchies
+   - Dining places: Restaurant, Cafe, Bar, Bakery, Food truck
+   - Food-related: Menu, Dessert, Appetizer, Vegan options
+   
+   ❌ NOT FOOD (is_food: false):
+   - Clothing: Sweater, Shoes, Jacket, Shirt, Dress, Jeans, Hat, Pants
+   - Electronics: iPhone, Laptop, Headphones, Charger, TV, Phone, Computer
+   - Services: Hospital, Doctor, Salon, Gym, Spa, Hotel room, Pharmacy
+   - Products: Furniture, Books, Toys, Stationery, Cosmetics, Medicine
+   - Vehicles: Car, Bike, Scooter, Taxi, Uber
+   - Any non-edible item
 
-Input: "I feel like eating light and healthy"
-Output: salad
+2. IF NOT FOOD/DRINK:
+   - IMMEDIATELY set "is_food": false
+   - Set "searchQuery": "Sorry, I can only help with food or drinks. Please enter something edible or drinkable."
+   - DO NOT proceed with any other analysis
+
+3. IF FOOD/DRINK - THEN:
+   - Correct spelling errors (e.g., "Piza" -> "Pizza", "Biriani" -> "Biryani")
+   - Normalize plurals (e.g., "burgers" -> "burger")
+   - Extract the food/drink category
+
+OUTPUT FORMAT (JSON ONLY):
+{
+  "is_food": true/false,
+  "searchQuery": "optimized query OR rejection message",
+  "locationString": "${locationContext}",
+  "was_corrected": true/false,
+  "corrected_term": "fixed word if applicable OR null"
+}
+
+EXAMPLES:
+
+Input: "sweater"
+Output: { "is_food": false, "searchQuery": "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+
+Input: "iPhone"
+Output: { "is_food": false, "searchQuery": "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+
+Input: "shoes"
+Output: { "is_food": false, "searchQuery": "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+
+Input: "hospital"
+Output: { "is_food": false, "searchQuery": "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+
+Input: "Piza"
+Output: { "is_food": true, "searchQuery": "Pizza near ${locationContext}", "locationString": "${locationContext}", "was_corrected": true, "corrected_term": "Pizza" }
+
+Input: "Burgers"
+Output: { "is_food": true, "searchQuery": "Burger near ${locationContext}", "locationString": "${locationContext}", "was_corrected": true, "corrected_term": "Burger" }
 
 Input: "late night hunger"
-Output: noodles
+Output: { "is_food": true, "searchQuery": "noodles near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
 
-Input: "I am bored"
-Output: food
-
-Now extract for: "${userPrompt}"
-
-    // 1. -CONTEXTUALIZE "LOCAL": If the user asks for "Local food", "Regional cuisine", or "Famous dish", REPLACE it with the specific cuisine name native to ${locationContext}. 
-    //    (e.g., If "Mau, UP", change "Local food" to "Best Litti Chokha and Chaat in Mau").
-
-    // 2. LOCATION BINDING: You MUST explicitly include the city name "${locationContext}" in the search query output.
-
-    // OUTPUT JSON ONLY: 
-    // { "searchQuery": "Your optimized query here", "locationString": "${locationContext}" }
-
-
-    
-
-
-
+Input: "coffee"
+Output: { "is_food": true, "searchQuery": "Coffee near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
 
   `;
 
@@ -66,12 +95,17 @@ Now extract for: "${userPrompt}"
       response_format: { type: "json_object" },
     });
     return cleanAndParseJSON(completion.choices[0]?.message?.content || "{}", {
-      searchQuery: `${userPrompt} near ${locationContext}`,
+      is_food: false,
+      searchQuery: "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.",
       locationString: locationContext,
     });
   } catch (error) {
     console.error("Groq Refine Failed:", error);
-    return { searchQuery: `${userPrompt} near ${locationContext}`, locationString: locationContext };
+    return { 
+      is_food: false,
+      searchQuery: "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.",
+      locationString: locationContext 
+    };
   }
 }
 
@@ -90,7 +124,6 @@ export async function analyzePlacesWithGroq(places: any[], userQuery: string) {
   - famous_dishes: concrete dishes from text, max 5 items
   - tip: optional practical tip
   - note: only explicit negatives (slow service, stale food, overpriced, hygiene)
-  - rejection_reason: why not relevant (if is_relevant = false)
 
     INPUT DATA (max 4000 chars per place):
     ${JSON.stringify(places.map(p => ({
