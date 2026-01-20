@@ -45,6 +45,11 @@ function normalizePlace(rawPlace: any): Place {
   };
 }
 
+// --- HELPER 3: Smart Cuisine Expansion ---
+// Now uses LLM (Groq) to detect cuisine instead of hardcoded lists
+// This allows infinite dish recognition and better accuracy
+// The cuisineCategory is returned from refineQuery() in groq.ts
+
 // --- HELPER 3: Search Google Maps (Smart Splitter) ---
 async function searchPlaces(query: string, location: string): Promise<Place[]> {
   const apiKey = process.env.SERPER_API_KEY;
@@ -133,8 +138,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { query, userLocation } = body;
 
+    // Extract the base query (remove filter context like "| Preference: Veg" for validation)
+    // This prevents Groq from misinterpreting filter preferences as part of the food query
+    const baseQuery = query.split('|')[0].trim();
+    
     // --- STEP 1: GROQ (REFINE & VALIDATE) ---
-    const refinedData = await refineQuery(query, userLocation || "India");
+    // Use baseQuery for validation, but keep full query for search
+    const refinedData = await refineQuery(baseQuery, userLocation || "India");
     
     console.log("🔍 Food Validation:", { query, is_food: refinedData.is_food, response: refinedData.searchQuery });
     
@@ -150,10 +160,18 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    let optimizedQuery = refinedData.searchQuery || query;
+    // Use the full query (with filters) for search, but base the optimization on Groq's response
+    let optimizedQuery = refinedData.searchQuery || baseQuery;
     const locationContext = refinedData.locationString || userLocation || "India";
 
-    optimizedQuery = optimizedQuery.replace(/[|"]/g, "").trim().toLowerCase();
+    // Re-append filter context if it exists in the original query
+    const filterParts = query.split('|').slice(1); // Get everything after the first |
+    if (filterParts.length > 0) {
+      optimizedQuery = `${optimizedQuery} | ${filterParts.join(' | ')}`;
+    }
+
+    // Clean up any extra pipes or quotes
+    optimizedQuery = optimizedQuery.replace(/[|"]/g, "").trim();
 
     console.log("🧠 Search Intent:", {
       raw: query,
@@ -167,47 +185,131 @@ export async function POST(req: NextRequest) {
     // --- STEP 2: SERPER (SEARCH) ---
     let places = await searchPlaces(optimizedQuery, locationContext);
     
-    if (locationContext && places.length > 0) {
-       const city = locationContext.split(',')[0].toLowerCase().trim();
-       places = places.filter(p => (p.address || "").toLowerCase().includes(city));
-    }
+    // Removed overly strict location filtering - Serper already handles location context
+    // This was excluding valid results from nearby areas
 
+    let usedFallbackQuery = false;
     if (places.length === 0) {
        console.log("⚠️ No results. Trying fallback query...");
        const fallbackQ = await getFallbackQuery(query, locationContext);
-       places = await searchPlaces(fallbackQ, locationContext);
+       const fallbackResults = await searchPlaces(fallbackQ, locationContext);
+       if (fallbackResults.length > 0) {
+         places = fallbackResults;
+         usedFallbackQuery = true;
+       }
     }
 
-    // 🔥 STRICT FILTERING (Fix for Pizza vs Chowmein)
-    // Identify the main "subject" from the user's raw query (e.g. "Pizza")
-    const forbiddenTerms = ["in", "near", "best", "top", "famous", "hot", "spicy", "places", "restaurants"];
+    // 🔥 SMART FILTERING: More lenient matching + Cuisine expansion
+    // Keep place type keywords (cafe, restaurant, etc.) as they're important for filtering
+    const forbiddenTerms = ["in", "near", "best", "top", "famous", "hot", "spicy", "places", "find", "search", "looking", "for", "some", "me", "suggest"];
     const searchTerms = query.toLowerCase().split(" ")
       .filter((w: string) => !forbiddenTerms.includes(w) && w.length > 2);
-    const mainSubject = searchTerms[0] || "";
+    
+    const relevantTerms = searchTerms.length > 0 ? searchTerms : [];
+    // Get cuisine category from Groq LLM (instead of hardcoded lists)
+    let cuisineCategory = refinedData.cuisineCategory || null;
+    let usedCuisineExpansion = false;
 
-    const exactMatches: Place[] = [];
-    const alternatives: Place[] = [];
+    // ALWAYS run cuisine expansion when cuisine is detected (not just when < 5 results)
+    if (cuisineCategory && !optimizedQuery.toLowerCase().includes(cuisineCategory.toLowerCase())) {
+      console.log(`🍜 Always expanding search to ${cuisineCategory} cuisine for query: ${query}`);
+      const cuisineQuery = `${cuisineCategory} restaurants`;
+      const cuisineResults = await searchPlaces(cuisineQuery, locationContext);
+      
+      // Merge cuisine results with original results, avoiding duplicates
+      const existingIds = new Set(places.map(p => p.cid || p.place_id || p.title));
+      const newPlaces = cuisineResults.filter(p => !existingIds.has(p.cid || p.place_id || p.title));
+      places = [...places, ...newPlaces];
+      usedCuisineExpansion = true;
+      console.log(`✅ Merged ${newPlaces.length} additional ${cuisineCategory} restaurants. Total: ${places.length}`);
+    }
+
+    // 🔥 SMART SCORING: Boost cuisine matches, then sort by score (not just rating)
     let fallbackMessage = null;
-
-    if (mainSubject && places) {
-      // Sort places into exact keyword matches vs others
-      places.forEach(place => {
-         const placeStr = JSON.stringify(place).toLowerCase();
-        if (placeStr.includes(mainSubject.toLowerCase())) {
-          exactMatches.push(place);
-        } else {
-          alternatives.push(place);
+    
+    if (places.length > 0) {
+      // Score each place: cuisine match boost + term match + rating
+      const scoredPlaces = places.map(place => {
+        const placeTitle = (place.title || "").toLowerCase();
+        const placeAddress = (place.address || "").toLowerCase();
+        const placeCategories = (place.categories || []).join(" ").toLowerCase();
+        const combinedStr = `${placeTitle} ${placeAddress} ${placeCategories}`;
+        
+        let score = 0;
+        let cuisineMatch = false;
+        let termMatchRatio = 0;
+        
+        // 1. CUISINE MATCH BOOST (High priority)
+        if (cuisineCategory) {
+          const cuisineLower = cuisineCategory.toLowerCase();
+          if (combinedStr.includes(cuisineLower) || 
+              placeCategories.includes(cuisineLower) ||
+              placeTitle.includes(cuisineLower)) {
+            cuisineMatch = true;
+            score += 1000; // Big boost for cuisine match
+          }
         }
+        
+        // 2. PLACE TYPE MATCH BOOST (Very High Priority - e.g., "cafe" should match cafes, not parks)
+        const placeTypeKeywords = ['cafe', 'restaurant', 'bar', 'bakery', 'food', 'dining', 'eatery', 'bistro'];
+        const queryPlaceTypes = relevantTerms.filter((term: string) => placeTypeKeywords.includes(term));
+        if (queryPlaceTypes.length > 0) {
+          const hasPlaceType = queryPlaceTypes.some((type: string) => 
+            placeTitle.includes(type) || 
+            placeCategories.includes(type) ||
+            combinedStr.includes(type)
+          );
+          if (hasPlaceType) {
+            score += 1500; // Even higher boost for place type match (cafe, restaurant, etc.)
+          } else {
+            // Penalize places that don't match the requested type (e.g., park when searching for cafe)
+            score -= 2000; // Heavy penalty for wrong place type
+          }
+        }
+        
+        // 3. TERM MATCH RATIO (Medium priority)
+        if (relevantTerms.length > 0) {
+          const matchingTerms = relevantTerms.filter((term: string) => combinedStr.includes(term));
+          termMatchRatio = matchingTerms.length / relevantTerms.length;
+          score += termMatchRatio * 500; // Boost based on how many terms match
+        }
+        
+        // 4. RATING (Lower priority, but still matters)
+        const rating = place.rating || 0;
+        score += rating * 10; // Rating contributes but less than cuisine/term matches
+        
+        return {
+          place,
+          score,
+          cuisineMatch,
+          termMatchRatio,
+          rating
+        };
       });
-
-      if (exactMatches.length > 0) {
-        // If we found the exact thing, ONLY show that
-        places = exactMatches;
-      } else {
-        // If we found NOTHING, show alternatives and set a warning message
-        places = alternatives;
-        if (places.length > 0) {
-          fallbackMessage = `We couldn't find exact matches for "${mainSubject.toLowerCase()}" in this area. Here are some popular alternatives instead.`;
+      
+      // Sort by score (highest first): Cuisine matches + term matches come first
+      scoredPlaces.sort((a, b) => b.score - a.score);
+      
+      // Extract places back in sorted order
+      places = scoredPlaces.map(sp => sp.place);
+      
+      // Count cuisine matches for message
+      const cuisineMatches = scoredPlaces.filter(sp => sp.cuisineMatch).length;
+      const nonCuisineMatches = scoredPlaces.length - cuisineMatches;
+      
+      // Set informative message
+      if (usedCuisineExpansion && cuisineCategory) {
+        if (cuisineMatches > 0) {
+          fallbackMessage = `Found ${cuisineMatches} ${cuisineCategory} restaurant${cuisineMatches > 1 ? 's' : ''}${nonCuisineMatches > 0 ? ` and ${nonCuisineMatches} other place${nonCuisineMatches > 1 ? 's' : ''}` : ''} in this area.`;
+        } else {
+          fallbackMessage = `Found restaurants in this area.`;
+        }
+      } else if (relevantTerms.length > 0) {
+        const exactMatches = scoredPlaces.filter(sp => sp.termMatchRatio === 1).length;
+        if (exactMatches > 0) {
+          // No message needed for exact matches
+        } else {
+          fallbackMessage = `Found places related to "${relevantTerms.join(" ")}" in this area.`;
         }
       }
     }
@@ -217,8 +319,9 @@ export async function POST(req: NextRequest) {
     }
 
     // --- STEP 3: SERPER (ENRICH) ---
-    // 👇 THIS IS THE LINE CONTROLLING THE NUMBER OF CARDS
-    const topCandidates = places.sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 5);
+    // 👇 Places are already sorted by smart scoring (cuisine first, then term matches, then rating)
+    // No need to re-sort by rating - just take top 12
+    const topCandidates = places.slice(0, 12);
     
     console.log(`🗣️ Fetching public reviews for top ${topCandidates.length} candidates...`);
     
@@ -261,10 +364,10 @@ const cleanedRecommendations = finalAnalysis.map((rec: any) => {
       context: { 
         original_query: query, 
         location_used: locationContext,
-        isFallback: !!fallbackMessage, // Flag for frontend
-        message: fallbackMessage,
+        isFallback: false, // Don't mark as fallback if we have results - only use fallbackMessage
+        message: fallbackMessage || null, // Only show message if we have a meaningful explanation
         was_corrected: refinedData.was_corrected,
-        corrected_term: refinedData.corrected_term       // The warning message
+        corrected_term: refinedData.corrected_term
       }
     });
 

@@ -20,12 +20,7 @@ export default function LocationAutocomplete({
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // 3. Sync internal query with Parent Value
-  // If parent says "New Delhi" (via GPS), we show "New Delhi"
-  useEffect(() => {
-    // Only search if the user typed this, not if it came from GPS logic
-    // We can rely on 'shouldPreventOpen' or just check if suggestions are needed
-  }, [value]);
+  // Note: Value is controlled by parent, no need for sync effect
 
   // Handle Input Change
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {

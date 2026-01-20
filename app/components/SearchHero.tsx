@@ -89,7 +89,7 @@ export default function SearchHero({
   ];
 
   const { text, isListening, startListening, stopListening, hasSupport } = useSpeechRecognition();
-  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const isTouchDevice = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
 
   // Auto-expand textarea height based on content
@@ -151,23 +151,15 @@ export default function SearchHero({
     return () => clearInterval(interval);
   }, [loading]);
 
-  // 5. Handle outside clicks for filters
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
-        setShowFilters(false);
-      }
-    };
-    if (showFilters) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showFilters]);
+  // 5. Handle outside clicks for filters - REMOVED to prevent conflicts with backdrop
+  // The backdrop handles closing, and clicks inside popup are stopped by stopPropagation
 
   const handleMicClick = () => {
     if (isListening) {
       stopListening();
     } else {
+      // Clear previous text and start listening
+      setQuery("");
       startListening();
     }
   };
@@ -237,8 +229,12 @@ export default function SearchHero({
         return;
       }
 
-      if (data.context?.was_corrected) {
-        setFallbackMessage(`Showing results for "${data.context.corrected_term.toLowerCase()}" instead of "${query.toLowerCase()}"`);
+      if (data.context?.was_corrected && data.context.corrected_term) {
+        const corrected = data.context.corrected_term.toLowerCase();
+        const original = query.toLowerCase();
+        if (corrected !== original) {
+          setFallbackMessage(`Showing results for "${corrected}" instead of "${original}"`);
+        }
       }
       
       // Handle 404 specifically
@@ -252,10 +248,20 @@ export default function SearchHero({
         return;
       }
 
-      if (data.context && data.context.isFallback) {
-         setFallbackMessage(
-           data.context.message || "The current food item seems to be unavailable. Here are some similar items you may like."
-         );
+      // Only show fallback message if context explicitly provides one AND we have results.
+      // Suppress "couldn't find..." messaging when results are already decent.
+      if (data.context?.message && data.data && data.data.length > 0) {
+        const message: string = data.context.message;
+        const lower = message.toLowerCase();
+        const count = Array.isArray(data.data) ? data.data.length : 0;
+        if (lower.includes("couldn't find") && count >= 5) {
+          setFallbackMessage("");
+        } else {
+          setFallbackMessage(message);
+        }
+      } else {
+        // Clear fallback message if no results or no message
+        setFallbackMessage("");
       }
 
       if (!response.ok || data.status === "error") {
@@ -290,7 +296,140 @@ export default function SearchHero({
     <section className="gold-sheen relative z-20 pb-10">
       
       {/* FILTER BACKDROP */}
-      {showFilters}
+      {showFilters && (
+        <div 
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[90]"
+          onClick={() => setShowFilters(false)}
+        />
+      )}
+
+      {/* FILTER POPUP - Moved outside relative container for proper z-index */}
+      {showFilters && (
+        <div 
+          className="fixed top-20 left-4 right-4 sm:left-1/2 sm:-translate-x-1/2 sm:top-24 sm:max-w-md z-[100] animate-in fade-in zoom-in-95 duration-200"
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="bg-white border border-[var(--border-subtle)] rounded-2xl shadow-2xl p-5 ring-1 ring-orange-100">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-widest">Refine Search</h3>
+              <button onClick={() => setShowFilters(false)} className="text-slate-500 hover:text-slate-800">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex flex-col space-y-5">
+              <div>
+                <span className="text-xs text-slate-500 mb-2 block font-medium">DIETARY</span>
+                <div className="flex flex-wrap gap-2">
+                  {["Veg", "Non veg", "Jain"].map((pref) => (
+                    <button
+                      key={pref}
+                      onClick={() => setPreferences(pref === preferences ? "" : pref)}
+                      className={`text-sm py-1.5 px-4 rounded-lg border transition-all duration-200 ${
+                        preferences === pref
+                          ? "bg-[var(--gold-400)] text-white border-[var(--gold-400)] font-bold shadow-[0_0_10px_rgba(249,115,22,0.25)]"
+                          : "border-[var(--border-subtle)] bg-white text-slate-700 hover:border-slate-300"
+                      }`}
+                    >
+                      {pref}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <span className="text-xs text-slate-500 mb-2 block font-medium">BUDGET (₹)</span>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">₹</span>
+                    <input
+                      type="number"
+                      value={budget}
+                      onChange={(e) => setBudget(e.target.value)}
+                      placeholder="Max price"
+                      className="w-full bg-white border border-[var(--border-subtle)] rounded-lg py-2 pl-7 pr-3 text-sm text-slate-800 focus:border-[var(--gold-400)] focus:outline-none transition-colors"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <span className="text-xs text-slate-500 mb-2 block font-medium">ALLERGENS</span>
+                  
+                  {/* PRESET ALLERGENS */}
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {allergenList.map((allergen) => (
+                      <button
+                        key={allergen}
+                        onClick={() => handleAllergenChange(allergen)}
+                        className={`text-xs py-1.5 px-3 rounded-md border transition-all ${
+                          allergens.includes(allergen)
+                            ? "bg-red-500/10 text-red-600 border-red-500/40"
+                            : "border-[var(--border-subtle)] bg-white text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        {allergen}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* CUSTOM ALLERGEN INPUT */}
+                  <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        value={customAllergen}
+                        onChange={(e) => setCustomAllergen(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && handleAddCustomAllergen()}
+                        placeholder="Other (e.g. Garlic)"
+                        className="w-full bg-white border border-[var(--border-subtle)] rounded-lg py-1.5 px-3 text-xs text-slate-800 focus:border-[var(--gold-400)] focus:outline-none transition-colors"
+                      />
+                      <button 
+                        onClick={handleAddCustomAllergen}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 rounded-lg px-3 flex items-center justify-center transition-colors"
+                      >
+                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                           <line x1="12" y1="5" x2="12" y2="19"></line>
+                           <line x1="5" y1="12" x2="19" y2="12"></line>
+                         </svg>
+                      </button>
+                  </div>
+
+                  {/* SHOW CUSTOM ALLERGENS SELECTED */}
+                  {allergens.filter(a => !allergenList.includes(a)).length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-slate-100">
+                         {allergens.filter(a => !allergenList.includes(a)).map(custom => (
+                            <div key={custom} className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-red-50 border border-red-200 text-[10px] text-red-700 font-medium">
+                               {custom}
+                               <button onClick={() => handleAllergenChange(custom)} className="hover:text-red-900">
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                     <line x1="18" y1="6" x2="6" y2="18" />
+                                     <line x1="6" y1="6" x2="18" y2="18" />
+                                  </svg>
+                               </button>
+                            </div>
+                         ))}
+                      </div>
+                  )}
+
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-[var(--border-subtle)] flex justify-end">
+              <button 
+                onClick={() => setShowFilters(false)}
+                className="bg-[var(--gold-400)] hover:bg-[var(--gold-500)] text-white font-semibold text-sm py-2 px-6 rounded-lg shadow-md transition-transform active:scale-95"
+              >
+                Apply Filters
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className={`mx-auto ${hasSearched ? "max-w-screen-lg" : "max-w-screen-sm sm:max-w-screen-md md:max-w-screen-lg"} px-4 ${hasSearched ? "pt-4 sm:pt-6" : "pt-6 sm:pt-8"} relative z-10`}>
         
@@ -333,7 +472,11 @@ export default function SearchHero({
               {/* Mic */}
               {hasSupport && (
                 <button
-                  onClick={handleMicClick}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleMicClick();
+                  }}
+                  aria-label={isListening ? "Stop listening" : "Start voice input"}
                   className={`p-2 rounded-lg transition-all ${
                     isListening 
                       ? "text-red-500 bg-red-500/10 animate-pulse" 
@@ -348,7 +491,14 @@ export default function SearchHero({
 
               {/* Filter */}
               <button
-                onClick={() => setShowFilters(!showFilters)}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowFilters(prev => !prev);
+                }}
+                aria-label="Toggle filters"
+                aria-expanded={showFilters}
                 className={`p-2 rounded-lg transition-colors ${
                   showFilters ? "text-[var(--gold-500)] bg-orange-50" : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
                 }`}
@@ -437,127 +587,6 @@ export default function SearchHero({
             </div>
           )}
 
-          {/* 4. FILTER POPUP */}
-          {showFilters && (
-            <div className="fixed top-20 left-4 right-4 sm:left-1/2 sm:-translate-x-1/2 sm:top-24 sm:max-w-md z-100 animate-in fade-in zoom-in-95 duration-200">
-               <div className="bg-white border border-[var(--border-subtle)] rounded-2xl shadow-2xl p-5 ring-1 ring-orange-100">
-                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-widest">Refine Search</h3>
-                  <button onClick={() => setShowFilters(false)} className="text-slate-500 hover:text-slate-800">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-
-                <div className="flex flex-col space-y-5">
-                  <div>
-                    <span className="text-xs text-slate-500 mb-2 block font-medium">DIETARY</span>
-                    <div className="flex flex-wrap gap-2">
-                      {["Veg", "Non veg", "Jain"].map((pref) => (
-                        <button
-                          key={pref}
-                          onClick={() => setPreferences(pref === preferences ? "" : pref)}
-                          className={`text-sm py-1.5 px-4 rounded-lg border transition-all duration-200 ${
-                            preferences === pref
-                              ? "bg-[var(--gold-400)] text-white border-[var(--gold-400)] font-bold shadow-[0_0_10px_rgba(249,115,22,0.25)]"
-                              : "border-[var(--border-subtle)] bg-white text-slate-700 hover:border-slate-300"
-                          }`}
-                        >
-                          {pref}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <span className="text-xs text-slate-500 mb-2 block font-medium">BUDGET (₹)</span>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">₹</span>
-                        <input
-                          type="number"
-                          value={budget}
-                          onChange={(e) => setBudget(e.target.value)}
-                          placeholder="Max price"
-                          className="w-full bg-white border border-[var(--border-subtle)] rounded-lg py-2 pl-7 pr-3 text-sm text-slate-800 focus:border-[var(--gold-400)] focus:outline-none transition-colors"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-xs text-slate-500 mb-2 block font-medium">ALLERGENS</span>
-                      
-                      {/* PRESET ALLERGENS */}
-                      <div className="flex flex-wrap gap-2 mb-2">
-                        {allergenList.map((allergen) => (
-                          <button
-                            key={allergen}
-                            onClick={() => handleAllergenChange(allergen)}
-                            className={`text-xs py-1.5 px-3 rounded-md border transition-all ${
-                              allergens.includes(allergen)
-                                ? "bg-red-500/10 text-red-600 border-red-500/40"
-                                : "border-[var(--border-subtle)] bg-white text-slate-600 hover:text-slate-900"
-                            }`}
-                          >
-                            {allergen}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* NEW: CUSTOM ALLERGEN INPUT */}
-                      <div className="flex gap-2">
-                          <input 
-                            type="text" 
-                            value={customAllergen}
-                            onChange={(e) => setCustomAllergen(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && handleAddCustomAllergen()}
-                            placeholder="Other (e.g. Garlic)"
-                            className="w-full bg-white border border-[var(--border-subtle)] rounded-lg py-1.5 px-3 text-xs text-slate-800 focus:border-[var(--gold-400)] focus:outline-none transition-colors"
-                          />
-                          <button 
-                            onClick={handleAddCustomAllergen}
-                            className="bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 rounded-lg px-3 flex items-center justify-center transition-colors"
-                          >
-                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                               <line x1="12" y1="5" x2="12" y2="19"></line>
-                               <line x1="5" y1="12" x2="19" y2="12"></line>
-                             </svg>
-                          </button>
-                      </div>
-
-                      {/* SHOW CUSTOM ALLERGENS SELECTED */}
-                      {allergens.filter(a => !allergenList.includes(a)).length > 0 && (
-                          <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-slate-100">
-                             {allergens.filter(a => !allergenList.includes(a)).map(custom => (
-                                <div key={custom} className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-red-50 border border-red-200 text-[10px] text-red-700 font-medium">
-                                   {custom}
-                                   <button onClick={() => handleAllergenChange(custom)} className="hover:text-red-900">
-                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                         <line x1="18" y1="6" x2="6" y2="18" />
-                                         <line x1="6" y1="6" x2="18" y2="18" />
-                                      </svg>
-                                   </button>
-                                </div>
-                             ))}
-                          </div>
-                      )}
-
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-5 pt-4 border-t border-[var(--border-subtle)] flex justify-end">
-                  <button 
-                    onClick={() => setShowFilters(false)}
-                    className="bg-[var(--gold-400)] hover:bg-[var(--gold-500)] text-white font-semibold text-sm py-2 px-6 rounded-lg shadow-md transition-transform active:scale-95"
-                  >
-                    Apply Filters
-                  </button>
-                </div>
-               </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -573,10 +602,10 @@ export default function SearchHero({
         </div>
       )}
       
-      {hasSearched && fallbackMessage && !loading && (
+      {hasSearched && fallbackMessage && !loading && results.length > 0 && (
         <div className="mx-auto max-w-screen-lg px-4 mt-6 animate-in fade-in slide-in-from-top-2">
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex gap-3 items-start">
-              <div className="p-2 bg-orange-100 rounded-full text-orange-600">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 items-start">
+              <div className="p-2 bg-amber-100 rounded-full text-amber-600">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="12" cy="12" r="10" />
                   <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
@@ -584,8 +613,8 @@ export default function SearchHero({
                 </svg>
               </div>
               <div>
-               <h3 className="text-orange-700 font-semibold text-sm">Not available</h3>
-               <p className="text-orange-700/80 text-sm mt-0.5">{fallbackMessage}</p>
+               <h3 className="text-amber-700 font-semibold text-sm">Search Note</h3>
+               <p className="text-amber-700/80 text-sm mt-0.5">{fallbackMessage}</p>
              </div>
           </div>
         </div>

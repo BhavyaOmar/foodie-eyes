@@ -4,14 +4,22 @@ import { useState, useEffect, useRef } from 'react';
 
 // 1. Define the shape of the Speech API objects
 // We manually describe what the browser gives us so we don't need 'any'
-interface SpeechRecognitionEvent {
-  results: {
-    [index: number]: {
-      [index: number]: {
-        transcript: string;
-      };
-    };
+interface SpeechRecognitionResult {
+  [index: number]: {
+    transcript: string;
+    confidence?: number;
   };
+  isFinal?: boolean;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult | null;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionEvent {
+  results: SpeechRecognitionResultList;
 }
 
 interface SpeechRecognitionErrorEvent {
@@ -33,7 +41,8 @@ interface ISpeechRecognition {
 
 // 3. Extend Window to include the constructor
 interface IWindow extends Window {
-  webkitSpeechRecognition: new () => ISpeechRecognition; // It's a class constructor
+  webkitSpeechRecognition?: new () => ISpeechRecognition; // It's a class constructor
+  SpeechRecognition?: new () => ISpeechRecognition; // Standard API (Firefox, etc.)
 }
 
 export default function useSpeechRecognition() {
@@ -47,48 +56,117 @@ export default function useSpeechRecognition() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Type casting window to our custom interface
-    const { webkitSpeechRecognition } = window as unknown as IWindow;
+    // Check for both webkit and standard SpeechRecognition
+    const win = window as unknown as IWindow;
+    const SpeechRecognition = win.webkitSpeechRecognition || win.SpeechRecognition;
 
-    if (!webkitSpeechRecognition) {
-      console.error("Browser does not support speech recognition.");
+    if (!SpeechRecognition) {
+      console.warn("Browser does not support speech recognition.");
       setHasSupport(false);
       return;
     }
 
     setHasSupport(true);
 
-    const recognition = new webkitSpeechRecognition();
-    recognition.continuous = false;
-    recognition.lang = navigator.language || 'en-US';
-    recognition.interimResults = true;
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.lang = navigator.language || 'en-US';
+      recognition.interimResults = true;
 
-    // Now 'event' is properly typed! No red lines.
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const transcript = event.results[0][0].transcript;
-      setText(transcript);
-    };
+      // Handle both interim and final results
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
+        let finalTranscript = '';
+        
+        // Iterate through all results to build the complete transcript
+        // The results structure: event.results[i][0].transcript
+        for (let i = 0; i < event.results.length; i++) {
+          const result = event.results[i];
+          // Each result can have multiple alternatives, we take the first one [0]
+          if (result && result[0] && result[0].transcript) {
+            finalTranscript += result[0].transcript + ' ';
+          }
+        }
+        
+        // Update text with the complete transcript (trim to remove trailing space)
+        if (finalTranscript.trim()) {
+          setText(finalTranscript.trim());
+        }
+      };
 
-    recognition.onend = () => {
-      setIsListening(false);
-    };
+      recognition.onend = () => {
+        setIsListening(false);
+        console.log("🎤 Speech recognition ended");
+      };
 
-    recognitionRef.current = recognition;
+      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+        setIsListening(false);
+        // Common errors:
+        // - "no-speech": User didn't speak (not an error, just no input)
+        // - "aborted": Recognition was stopped (normal)
+        // - "audio-capture": No microphone found
+        // - "network": Network error
+        // - "not-allowed": Permission denied (user needs to grant permission)
+        
+        // Only log actual errors, not expected permission/user actions
+        if (event.error === "not-allowed") {
+          // Permission denied - this is expected if user hasn't granted permission yet
+          // Don't log as error, just silently handle
+          return;
+        } else if (event.error === "no-speech" || event.error === "aborted") {
+          // These are normal - user didn't speak or stopped manually
+          return;
+        } else {
+          // Log other errors (network, audio-capture, etc.)
+          console.warn("Speech recognition error:", event.error, event.message || "");
+        }
+      };
+
+      recognitionRef.current = recognition;
+    } catch (error) {
+      console.error("Failed to initialize speech recognition:", error);
+      setHasSupport(false);
+    }
 
     return () => {
-      if (recognitionRef.current) recognitionRef.current.stop();
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          // Ignore errors during cleanup
+        }
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const startListening = () => {
-    if (recognitionRef.current) {
-      try {
-        setText("");
-        recognitionRef.current.start();
+    if (!recognitionRef.current) {
+      console.warn("Speech recognition not available");
+      alert("Speech recognition is not supported in your browser. Please use Chrome or Edge.");
+      return;
+    }
+
+    try {
+      // Clear previous text
+      setText("");
+      // Start recognition
+      recognitionRef.current.start();
+      setIsListening(true);
+      console.log("🎤 Speech recognition started");
+    } catch (error: any) {
+      console.error("Error starting speech:", error);
+      setIsListening(false);
+      // Handle specific errors
+      if (error?.name === "NotAllowedError" || error?.message?.includes("permission") || error?.code === 1) {
+        alert("Microphone permission denied. Please allow microphone access in your browser settings and try again.");
+      } else if (error?.name === "NotFoundError" || error?.message?.includes("microphone") || error?.code === 2) {
+        alert("No microphone found. Please connect a microphone and try again.");
+      } else if (error?.message?.includes("already started") || error?.code === 0) {
+        // Recognition already started, just update state
         setIsListening(true);
-      } catch (error) {
-        console.error("Error starting speech:", error);
+      } else {
+        alert(`Failed to start speech recognition: ${error?.message || "Unknown error"}`);
       }
     }
   };

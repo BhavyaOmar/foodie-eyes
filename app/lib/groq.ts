@@ -26,11 +26,15 @@ CRITICAL RULES:
 1. ANALYZE INTENT - Answer ONE question: "Is this about eating, drinking, or dining?"
    
    ✅ FOOD/DRINK (is_food: true):
-   - Actual food: Pizza, Burger, Biryani, Pasta, Sushi, Salad, Sandwich
+   - Actual food: Pizza, Burger, Biryani, Pasta, Sushi, Salad, Sandwich, Chicken, Beef, Pork, Fish, Seafood
    - Drinks: Coffee, Tea, Beer, Wine, Juice, Water, Smoothie, Cocktail
    - Food moods: Hungry, Craving, Date night, Breakfast, Late-night munchies
    - Dining places: Restaurant, Cafe, Bar, Bakery, Food truck
-   - Food-related: Menu, Dessert, Appetizer, Vegan options
+   - Food-related: Menu, Dessert, Appetizer, Vegan options, Vegetarian options
+   - Conversational queries about food: "places to try", "iconic places", "best restaurants", "popular places", "must visit", "recommendations", "where to eat", "famous places", "top places", "suggest places", "suggest me places"
+   - Ambiance/atmosphere queries: "cozy cafe", "quiet cafe", "romantic restaurant", "peaceful place", "calm restaurant", "cozy places", "relaxing places", "quiet places", "peaceful places", "romantic places", "calm places"
+   - IMPORTANT: When users ask for "places" with ambiance words (cozy, relaxing, quiet, peaceful, romantic, calm, etc.), they are ALWAYS asking about dining places (cafes, restaurants). Treat these as food-related.
+   - IMPORTANT: Food items like "chicken burger", "beef burger", "pork sandwich" are STILL FOOD even if they contain meat. The presence of meat in the name doesn't make it non-food.
    
    ❌ NOT FOOD (is_food: false):
    - Clothing: Sweater, Shoes, Jacket, Shirt, Dress, Jeans, Hat, Pants
@@ -49,6 +53,10 @@ CRITICAL RULES:
    - Correct spelling errors (e.g., "Piza" -> "Pizza", "Biriani" -> "Biryani")
    - Normalize plurals (e.g., "burgers" -> "burger")
    - Extract the food/drink category
+   - Preserve the food item name as-is (e.g., "chicken burger" stays "chicken burger", don't change to just "burger")
+   - For conversational queries (e.g., "suggest places to try", "iconic places", "best restaurants"), convert to a searchable query like "restaurants" or "popular restaurants" or "best restaurants"
+   - For ambiance queries (e.g., "cozy cafe", "quiet cafe"), preserve the place type (cafe) and ambiance keywords in the search query: "cozy cafe" or "quiet cafe"
+   - For ambiance queries without explicit place type (e.g., "cozy places", "relaxing places", "suggest me some cozy and relaxing places"), convert to "cozy restaurants" or "relaxing cafes" or "cozy relaxing restaurants" - add a dining place type (restaurant/cafe) to make it searchable
 
 OUTPUT FORMAT (JSON ONLY):
 {
@@ -56,34 +64,75 @@ OUTPUT FORMAT (JSON ONLY):
   "searchQuery": "optimized query OR rejection message",
   "locationString": "${locationContext}",
   "was_corrected": true/false,
-  "corrected_term": "fixed word if applicable OR null"
+  "corrected_term": "fixed word if applicable OR null",
+  "cuisineCategory": "South Indian" | "North Indian" | "Chinese" | "Italian" | "Continental" | "Mexican" | "Thai" | "Japanese" | null
 }
+
+CUISINE DETECTION RULES:
+- Analyze the query to identify the cuisine type based on dishes mentioned
+- Examples:
+  - "idli dosa sambar" → "South Indian"
+  - "naan butter chicken" → "North Indian"
+  - "chowmein manchurian" → "Chinese"
+  - "pizza pasta" → "Italian"
+  - "biryani" → null (can be multiple cuisines, don't assume)
+  - "coffee" → null (not cuisine-specific)
+  - "restaurants" → null (too generic)
+- Only return cuisineCategory if you're confident about the cuisine type
+- If ambiguous or generic, return null
 
 EXAMPLES:
 
 Input: "sweater"
-Output: { "is_food": false, "searchQuery": "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+Output: { "is_food": false, "searchQuery": "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null, "cuisineCategory": null }
 
 Input: "iPhone"
-Output: { "is_food": false, "searchQuery": "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+Output: { "is_food": false, "searchQuery": "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null, "cuisineCategory": null }
 
 Input: "shoes"
-Output: { "is_food": false, "searchQuery": "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+Output: { "is_food": false, "searchQuery": "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null, "cuisineCategory": null }
 
 Input: "hospital"
-Output: { "is_food": false, "searchQuery": "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+Output: { "is_food": false, "searchQuery": "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null, "cuisineCategory": null }
 
 Input: "Piza"
-Output: { "is_food": true, "searchQuery": "Pizza near ${locationContext}", "locationString": "${locationContext}", "was_corrected": true, "corrected_term": "Pizza" }
+Output: { "is_food": true, "searchQuery": "Pizza near ${locationContext}", "locationString": "${locationContext}", "was_corrected": true, "corrected_term": "Pizza", "cuisineCategory": "Italian" }
 
 Input: "Burgers"
-Output: { "is_food": true, "searchQuery": "Burger near ${locationContext}", "locationString": "${locationContext}", "was_corrected": true, "corrected_term": "Burger" }
+Output: { "is_food": true, "searchQuery": "Burger near ${locationContext}", "locationString": "${locationContext}", "was_corrected": true, "corrected_term": "Burger", "cuisineCategory": null }
 
 Input: "late night hunger"
-Output: { "is_food": true, "searchQuery": "noodles near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+Output: { "is_food": true, "searchQuery": "noodles near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null, "cuisineCategory": null }
 
 Input: "coffee"
 Output: { "is_food": true, "searchQuery": "Coffee near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+
+Input: "Suggest me Some Iconic places to try in Kalyani"
+Output: { "is_food": true, "searchQuery": "popular restaurants near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+
+Input: "best restaurants"
+Output: { "is_food": true, "searchQuery": "best restaurants near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+
+Input: "where to eat"
+Output: { "is_food": true, "searchQuery": "restaurants near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+
+Input: "famous places to try"
+Output: { "is_food": true, "searchQuery": "popular restaurants near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+
+Input: "suggest me some quite and cozy cafe"
+Output: { "is_food": true, "searchQuery": "cozy quiet cafe near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null }
+
+Input: "quiet restaurant"
+Output: { "is_food": true, "searchQuery": "quiet restaurant near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null, "cuisineCategory": null }
+
+Input: "suggest me some cozy and relaxing places"
+Output: { "is_food": true, "searchQuery": "cozy relaxing restaurants near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null, "cuisineCategory": null }
+
+Input: "cozy places"
+Output: { "is_food": true, "searchQuery": "cozy restaurants near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null, "cuisineCategory": null }
+
+Input: "relaxing places"
+Output: { "is_food": true, "searchQuery": "relaxing cafes near ${locationContext}", "locationString": "${locationContext}", "was_corrected": false, "corrected_term": null, "cuisineCategory": null }
 
   `;
 
@@ -98,13 +147,15 @@ Output: { "is_food": true, "searchQuery": "Coffee near ${locationContext}", "loc
       is_food: false,
       searchQuery: "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.",
       locationString: locationContext,
+      cuisineCategory: null,
     });
   } catch (error) {
     console.error("Groq Refine Failed:", error);
     return { 
       is_food: false,
       searchQuery: "Sorry, I can only help with food or drinks. Please enter something edible or drinkable.",
-      locationString: locationContext 
+      locationString: locationContext,
+      cuisineCategory: null
     };
   }
 }

@@ -32,7 +32,7 @@ export async function searchPlaces(query: string, location: string): Promise<Sea
 
     const payload = {
         q: `${query} near ${location}`.trim(),
-        num: 8,
+        num: 15, // Increased from 8 to 15 to get more results
         gl: "in",
     };
 
