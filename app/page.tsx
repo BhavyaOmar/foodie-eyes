@@ -1,23 +1,19 @@
 "use client";
 
 import { useState, useEffect } from "react";
-// 1. Remove manual auth imports
-// import { onAuthStateChanged, User } from "firebase/auth";
-// import { auth } from "@/app/lib/firebase";
-
 // 2. Import Global Auth Context
 import { useUserAuth } from "@/app/context/AuthContext";
 
 import TopBar from "./components/TopBar";
-import LocationBar from "./components/LocationBar";
 import SearchHero from "./components/SearchHero";
 import MoodCards from "./components/MoodCards";
 import Footer from "./components/Footer";
 import DetailModal from "./components/DetailModal";
 import AuthModal from "./components/AuthModal";
+import LocationDisplay from "./components/LocationDisplay";
+import LocationModal from "./components/LocationModal";
 import { useHistory } from "./hooks/useHistory";
 import { useBookmarks } from "./hooks/useBookmarks";
-// import HistoryDrawer from "./components/HistoryDrawer"; // Unused import based on code
 
 type Place = {
   name: string;
@@ -34,22 +30,27 @@ type Place = {
   match_reason?: string;
   note?: string;
   tip?: string;
+  link?: string;
+  cid?: string;
+  place_id?: string;
 };
 
 export default function Home() {
-  // 3. Use Global Auth (Fixes sync issues)
+  // 3. Use Global Auth
   const { user, loading } = useUserAuth();
   const isSignedIn = !!user;
 
-  // 4. FIXED: Remove 'user' argument (It now uses Context internally)
-  const { bookmarks, isBookmarked, toggleBookmark, maxBookmarks } = useBookmarks();
+  // 4. Bookmarks
+  const { bookmarks, isBookmarked, toggleBookmark } = useBookmarks();
   
-  const { history, addToHistory } = useHistory();
-  // const [isHistoryOpen, setIsHistoryOpen] = useState(false); // Unused
+  const { addToHistory } = useHistory();
   
   const [location, setLocation] = useState("");
+  const [draftLocation, setDraftLocation] = useState("");
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState("");
+  const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
+  const [hasAutoPromptedLocation, setHasAutoPromptedLocation] = useState(false);
   const [results, setResults] = useState<Place[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
@@ -57,35 +58,75 @@ export default function Home() {
   const [bookmarkError, setBookmarkError] = useState<string | null>(null);
   const [moodPrompt, setMoodPrompt] = useState("");
 
-  // 5. Updated Effect: Load User Location ONLY when Auth is ready
+  // 5. Load User Location
   useEffect(() => {
-    if (loading) return; // Wait for Firebase to finish checking
+    if (loading) return; 
 
     if (user) {
-      // User is logged in -> Load their specific location
       const userLocationKey = `foodieLocation-${user.uid}`;
       const savedLocation = localStorage.getItem(userLocationKey);
       if (savedLocation) {
         setLocation(savedLocation);
+        setDraftLocation(savedLocation);
       } else {
-        setLocation(""); 
+        setLocation("");
+        setDraftLocation("");
       }
     } else {
-      // User is logged out -> Clear location
       setLocation("");
+      setDraftLocation("");
     }
   }, [user, loading]);
 
-  // Persist location to localStorage per user
-  const handleLocationChange = (newLocation: string) => {
-    setLocation(newLocation);
+  // Reset prompt so new users are asked
+  useEffect(() => {
+    setHasAutoPromptedLocation(false);
+  }, [user?.uid]);
+
+  // Auto prompt for location when missing
+  useEffect(() => {
+    if (loading) return;
+    if (location.trim()) {
+      setIsLocationModalOpen(false);
+      return;
+    }
+    if (!hasAutoPromptedLocation) {
+      setIsLocationModalOpen(true);
+      setHasAutoPromptedLocation(true);
+    }
+  }, [loading, location, hasAutoPromptedLocation]);
+
+  const persistLocation = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    setLocation(trimmed);
+    setDraftLocation(trimmed);
     if (user) {
       const userLocationKey = `foodieLocation-${user.uid}`;
-      localStorage.setItem(userLocationKey, newLocation);
+      localStorage.setItem(userLocationKey, trimmed);
     }
   };
 
-  // Handle bookmarking with Firebase
+  const handleLocationChange = (newLocation: string) => {
+    persistLocation(newLocation);
+  };
+
+  const handleLocationConfirm = () => {
+    if (!draftLocation.trim()) {
+      setLocationError("Please enter a location.");
+      return;
+    }
+    setLocationError("");
+    persistLocation(draftLocation);
+    setIsLocationModalOpen(false);
+  };
+
+  const handleOpenLocationModal = () => {
+    setLocationError("");
+    setDraftLocation(location);
+    setIsLocationModalOpen(true);
+  };
+
   const handleBookmark = async (place: Place) => {
     if (!isSignedIn) {
       setShowAuthModal(true);
@@ -103,17 +144,18 @@ export default function Home() {
       categories: place.categories,
       famous_dishes: place.famous_dishes,
       match_reason: place.match_reason,
-      tip: place.tip
+      tip: place.tip,
+      link: place.link,
+      cid: place.cid,
+      place_id: place.place_id
     });
 
     if (!result.success && result.error) {
       setBookmarkError(result.error);
-      // Auto-clear error after 3 seconds
       setTimeout(() => setBookmarkError(null), 3000);
     }
   };
 
-  // Reset app to initial state
   const handleReset = () => {
     setResults([]);
     setHasSearched(false);
@@ -145,7 +187,7 @@ export default function Home() {
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const readable = await reverseGeocode(pos.coords.latitude, pos.coords.longitude);
-        handleLocationChange(readable);
+        setDraftLocation(readable);
         setIsLocating(false);
       },
       (err) => {
@@ -155,25 +197,14 @@ export default function Home() {
     );
   };
 
-  // Note: This function was defined but unused in your snippet
-  // const handlePlaceSelect = (place: any) => {
-  //    addToHistory(place);
-  //    setSelectedPlace(place); 
-  // };
-
   return (
     <main className="min-h-dvh bg-white text-slate-900 flex flex-col">
       <TopBar 
         location={location}
         onReset={handleReset}
       />
-      <LocationBar
-        location={location}
-        isLocating={isLocating}
-        onRequestLocation={requestLocation}
-        onLocationChange={handleLocationChange}
-      />
-      <div className="gap-4">&nbsp;</div>
+      <LocationDisplay location={location} onChangeClick={handleOpenLocationModal} />
+      <div className="h-3" />
       {!hasSearched && <MoodCards onMoodSelect={setMoodPrompt} selectedMoodPrompt={moodPrompt} />}
       <div className="flex-1">
         <SearchHero 
@@ -209,6 +240,24 @@ export default function Home() {
         </div>
       )}
       
+      {/* --- MODALS SECTION --- */}
+
+      {/* 1. Location Modal (Independent) */}
+      <LocationModal
+        isOpen={isLocationModalOpen}
+        locationDraft={draftLocation}
+        isLocating={isLocating}
+        error={locationError}
+        onClose={() => setIsLocationModalOpen(false)}
+        onUseCurrent={requestLocation}
+        onDraftChange={(value) => {
+          setLocationError("");
+          setDraftLocation(value);
+        }}
+        onConfirm={handleLocationConfirm}
+      />
+
+      {/* 2. Detail Modal (Only when a place is selected) */}
       {selectedPlace && (
         <DetailModal
           place={selectedPlace}
@@ -219,6 +268,7 @@ export default function Home() {
         />
       )}
       
+      {/* 3. Auth Modal (Independent) */}
       {showAuthModal && (
         <AuthModal
           isOpen={showAuthModal}

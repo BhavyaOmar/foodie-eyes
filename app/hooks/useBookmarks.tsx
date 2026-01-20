@@ -24,6 +24,9 @@ type BookmarkPlace = {
   match_reason?: string;
   note?: string;
   tip?: string;
+  link?: string;
+  cid?: string;
+  place_id?: string;
   savedAt: number;
 };
 
@@ -135,6 +138,9 @@ export function useBookmarks() {
         famous_dishes: place.famous_dishes,
         match_reason: place.match_reason,
         tip: place.tip,
+        link: place.link,
+        cid: place.cid,
+        place_id: place.place_id,
         savedAt: Date.now()
       });
 

@@ -3,33 +3,59 @@ import Groq from "groq-sdk";
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // --- HELPER: ROBUST JSON PARSER ---
-function cleanAndParseJSON(text: string): any {
+function cleanAndParseJSON(text: string,fallback: any={}): any {
   try {
     // Aggressively clean markdown code blocks
     const jsonStr = text.replace(/```json|```/g, "").trim();
     return JSON.parse(jsonStr);
   } catch (e) {
     console.error("Groq JSON Parse Error. Raw Text:", text);
-    return { recommendations: [] }; // Safe fallback
+    return fallback; // Safe fallback
   }
 }
 
 // 1. REFINE QUERY (The Brain - Groq Edition)
 export async function refineQueryWithGroq(userPrompt: string, locationContext: string) {
   const prompt = `
-    ACT AS: A Google Maps Search Expert.
+    You are a food intent classifier.
     USER INPUT: "${userPrompt}"
     LOCATION: "${locationContext}"
 
-    TASK: Convert the user's input into the BEST possible Google Maps search query.
+    Task:
+- Extract ONLY a food or drink category that best fits the mood.
+- Do NOT include restaurant names.
+- Do NOT include adjectives alone.
+- If unclear, return "food".
 
-    RULES:
-    1. CONTEXTUALIZE "LOCAL": If the user asks for "Local food", "Regional cuisine", or "Famous dish", REPLACE it with the specific cuisine name native to ${locationContext}. 
-       (e.g., If "Mau, UP", change "Local food" to "Best Litti Chokha and Chaat in Mau").
-    2. LOCATION BINDING: You MUST explicitly include the city name "${locationContext}" in the search query output.
+Examples:
+Input: "it's a rainy day and I want something warm"
+Output: soup
 
-    OUTPUT JSON ONLY: 
-    { "searchQuery": "Your optimized query here", "locationString": "${locationContext}" }
+Input: "I feel like eating light and healthy"
+Output: salad
+
+Input: "late night hunger"
+Output: noodles
+
+Input: "I am bored"
+Output: food
+
+Now extract for: "${userPrompt}"
+
+    // 1. -CONTEXTUALIZE "LOCAL": If the user asks for "Local food", "Regional cuisine", or "Famous dish", REPLACE it with the specific cuisine name native to ${locationContext}. 
+    //    (e.g., If "Mau, UP", change "Local food" to "Best Litti Chokha and Chaat in Mau").
+
+    // 2. LOCATION BINDING: You MUST explicitly include the city name "${locationContext}" in the search query output.
+
+    // OUTPUT JSON ONLY: 
+    // { "searchQuery": "Your optimized query here", "locationString": "${locationContext}" }
+
+
+    
+
+
+
+
   `;
 
   try {
@@ -39,10 +65,12 @@ export async function refineQueryWithGroq(userPrompt: string, locationContext: s
       temperature: 0,
       response_format: { type: "json_object" },
     });
-    return cleanAndParseJSON(completion.choices[0]?.message?.content || "{}");
+    return cleanAndParseJSON(completion.choices[0]?.message?.content || "{}", {
+      searchQuery: `${userPrompt} near ${locationContext}`,
+      locationString: locationContext,
+    });
   } catch (error) {
     console.error("Groq Refine Failed:", error);
-    // Ultimate fallback if Groq dies
     return { searchQuery: `${userPrompt} near ${locationContext}`, locationString: locationContext };
   }
 }
@@ -53,26 +81,30 @@ export async function analyzePlacesWithGroq(places: any[], userQuery: string) {
     ROLE: Friendly foodie guide who vets places.
     USER QUERY: "${userQuery}"
 
-    FOR EACH PLACE: Give helpful positives (Why you'll love it) and move negatives into a separate "note".
+    TASK
+    - Annotate EACH place independently. Do NOT rank.
+  - For each place, provide:
+  - is_relevant: true/false
+  - confidence: 0-1
+  - match_reason: positives only (taste, signature dishes, ambience, service)
+  - famous_dishes: concrete dishes from text, max 5 items
+  - tip: optional practical tip
+  - note: only explicit negatives (slow service, stale food, overpriced, hygiene)
+  - rejection_reason: why not relevant (if is_relevant = false)
 
-    STRICT RULES
-    - POSITIVE ONLY in match_reason: highlight taste, signature dishes, ambience perks, service wins. No negatives here.
-    - NEGATIVES go to note: only add if there are explicit complaints (slow service, stale food, overpriced, hygiene). Keep concise.
-    - FAMOUS_DISHES must be concrete dish names from text (e.g., "butter chicken", "filter coffee"). Ignore vague praise like "food is awesome" or "good ambience". If no real dishes, return an empty list.
-    - QUERY FIT: Prefer dishes/cues matching the user query.
-
-    INPUT DATA (Scraped Snippets):
+    INPUT DATA (max 4000 chars per place):
     ${JSON.stringify(places.map(p => ({
       name: p.title,
       rating: p.rating,
       text: p.scraped_content ? p.scraped_content.slice(0, 4000) : "No reviews available."
     })))}
 
-    OUTPUT (JSON):
+    OUTPUT JSON ONLY:
     {
-      "recommendations": [
+      "place_analysis": [
         {
           "name": "Exact Name",
+          "is_relevant" : true,
           "match_reason": "Positive reasons to love it (no negatives).",
           "famous_dishes": ["Dish 1", "Dish 2"],
           "tip": "Practical tip to enjoy the visit (optional)",
@@ -89,10 +121,10 @@ export async function analyzePlacesWithGroq(places: any[], userQuery: string) {
       temperature: 0,
       response_format: { type: "json_object" },
     });
-    return cleanAndParseJSON(completion.choices[0]?.message?.content || "{}");
+    return cleanAndParseJSON(completion.choices[0]?.message?.content || "{}", { place_analysis: [] });
   } catch (error) {
     console.error("Groq Analysis Failed:", error);
-    return { recommendations: [] };
+    return { place_analysis: [] };
   }
 }
 
@@ -102,11 +134,9 @@ export async function getFallbackQueryWithGroq(originalQuery: string, location: 
     CONTEXT: User searched for "${originalQuery}" in "${location}" but found 0 results.
     
     TASK: 
-    1. Identify the broad category (e.g., "Fruit Ice Cream" -> "Ice Cream Shop").
-    2. Return a search query for that CATEGORY inside "${location}".
-    
-    CRITICAL: MUST include "${location}" in the string.
-    RETURN ONLY THE SEARCH STRING. NO JSON.
+    1. Identify the broad category of food/drink (e.g., "Fruit Ice Cream" -> "Ice Cream Shop").
+    2. Return a search query for that CATEGORY including "${location}".
+    3. Return only string, NO JSON.
   `;
 
   try {

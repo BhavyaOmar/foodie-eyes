@@ -2,6 +2,8 @@
 import type React from "react";
 import { useState, useEffect, useRef } from "react";
 import useSpeechRecognition from "@/app/hooks/useSpeechRecognition";
+import { useUserAuth } from "@/app/context/AuthContext";
+import { getSmallGreeting, getMainHeadline, getSearchPlaceholder } from "@/app/utils/dynamicText";
 
 // --- TYPES ---
 type Place = {
@@ -52,6 +54,13 @@ export default function SearchHero({
   onBookmark,
   moodPrompt
 }: Props) {
+  const { user } = useUserAuth();
+  
+  // Dynamic Text States
+  const [greeting, setGreeting] = useState("Hello!");
+  const [headline, setHeadline] = useState("What are you in the mood for?");
+  const [placeholderText, setPlaceholderText] = useState("Try 'Spicy Biryani', 'Date Night', or 'Comfort Food'...");
+
   const [query, setQuery] = useState(moodPrompt || "");
   const [showFilters, setShowFilters] = useState(false);
   const [fallbackMessage, setFallbackMessage] = useState("");
@@ -60,7 +69,7 @@ export default function SearchHero({
   const [preferences, setPreferences] = useState("");
   const [budget, setBudget] = useState("");
   const [allergens, setAllergens] = useState<string[]>([]);
-  const [customAllergen, setCustomAllergen] = useState(""); // New State
+  const [customAllergen, setCustomAllergen] = useState(""); 
   
   // Loading & Error States
   const [loading, setLoading] = useState(false);
@@ -80,20 +89,55 @@ export default function SearchHero({
   ];
 
   const { text, isListening, startListening, stopListening, hasSupport } = useSpeechRecognition();
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const isTouchDevice = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
 
-  // 1. Update query when mood prompt changes
+  // Auto-expand textarea height based on content
+  const handleInputChange = (value: string) => {
+    setQuery(value);
+    if (inputRef.current && inputRef.current instanceof HTMLTextAreaElement) {
+      inputRef.current.style.height = "auto";
+      inputRef.current.style.height = `${Math.max(inputRef.current.scrollHeight, 40)}px`;
+    }
+  };
+
+  // 1. Initialize Dynamic Texts based on User & Time
+  useEffect(() => {
+    const userName = user?.displayName?.split(" ")[0] || "Foodie";
+    setGreeting(getSmallGreeting(userName));
+    setHeadline(getMainHeadline());
+    setPlaceholderText(getSearchPlaceholder());
+  }, [user]);
+
+  // 2. Update query when mood prompt changes
   useEffect(() => {
     if (moodPrompt) {
       setQuery(moodPrompt);
+      // Focus input and move caret to end for better mobile UX
+      setTimeout(() => {
+        if (inputRef.current) {
+          try {
+            inputRef.current.focus({ preventScroll: true } as any);
+            const len = moodPrompt.length;
+            (inputRef.current as HTMLTextAreaElement).setSelectionRange(len, len);
+            // Trigger height adjustment
+            const textarea = inputRef.current as HTMLTextAreaElement;
+            textarea.style.height = "auto";
+            textarea.style.height = `${Math.max(textarea.scrollHeight, 40)}px`;
+          } catch {
+            // ignore selection errors on some browsers
+          }
+        }
+      }, 50);
     }
   }, [moodPrompt]);
 
-  // 2. Sync Voice to Text
+  // 3. Sync Voice to Text
   useEffect(() => {
     if (text) setQuery(text);
   }, [text]);
 
-  // 3. Cycle Loading Messages
+  // 4. Cycle Loading Messages
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (loading) {
@@ -107,7 +151,7 @@ export default function SearchHero({
     return () => clearInterval(interval);
   }, [loading]);
 
-  // 4. Handle outside clicks for filters
+  // 5. Handle outside clicks for filters
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
@@ -223,7 +267,7 @@ export default function SearchHero({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (e.key === "Enter") {
       handleSearch();
       setShowFilters(false);
@@ -238,10 +282,16 @@ export default function SearchHero({
 
       <div className={`mx-auto ${hasSearched ? "max-w-screen-lg" : "max-w-screen-sm sm:max-w-screen-md md:max-w-screen-lg"} px-4 ${hasSearched ? "pt-4 sm:pt-6" : "pt-6 sm:pt-8"} relative z-10`}>
         
+        {/* DYNAMIC HEADER SECTION */}
         {!hasSearched && (
-          <h1 className="text-2xl sm:text-3xl font-bold gold-gradient-text text-center sm:text-left mb-6">
-            What are you in the mood for?
-          </h1>
+          <div className="mb-6 text-center sm:text-left">
+            <p className="text-xs sm:text-sm font-semibold text-orange-600 uppercase tracking-wider mb-1 animate-in fade-in slide-in-from-bottom-2 duration-500">
+              {greeting}
+            </p>
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold gold-gradient-text animate-in fade-in slide-in-from-bottom-3 duration-700">
+              {headline}
+            </h1>
+          </div>
         )}
 
         {/* === SEARCH INTERFACE === */}
@@ -256,13 +306,14 @@ export default function SearchHero({
               </svg>
             </span>
 
-            <input
-              type="text"
+            <textarea
+              ref={inputRef}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => handleInputChange(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={moodPrompt ? "Tell us more about what you want..." : "Try 'Spicy Biryani', 'Date Night', or 'Comfort Food'..."}
-              className="w-full rounded-xl bg-white border border-[var(--border-subtle)] focus:border-[var(--gold-400)] text-sm sm:text-base text-slate-900 placeholder:text-slate-400 pl-12 pr-32 py-3 outline-none transition shadow-md"
+              placeholder={moodPrompt ? "Tell us more about what you want..." : placeholderText}
+              rows={1}
+              className="w-full rounded-xl bg-white border border-[var(--border-subtle)] focus:border-[var(--gold-400)] text-xs sm:text-sm md:text-base text-slate-900 placeholder:text-slate-400 pl-12 pr-32 py-3 outline-none transition shadow-md min-h-[40px] max-h-[200px] resize-none overflow-hidden"
             />
 
             {/* Right Buttons */}
@@ -444,23 +495,23 @@ export default function SearchHero({
 
                       {/* NEW: CUSTOM ALLERGEN INPUT */}
                       <div className="flex gap-2">
-                         <input 
-                           type="text" 
-                           value={customAllergen}
-                           onChange={(e) => setCustomAllergen(e.target.value)}
-                           onKeyDown={(e) => e.key === "Enter" && handleAddCustomAllergen()}
-                           placeholder="Other (e.g. Garlic)"
-                           className="w-full bg-white border border-[var(--border-subtle)] rounded-lg py-1.5 px-3 text-xs text-slate-800 focus:border-[var(--gold-400)] focus:outline-none transition-colors"
-                         />
-                         <button 
-                           onClick={handleAddCustomAllergen}
-                           className="bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 rounded-lg px-3 flex items-center justify-center transition-colors"
-                         >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <line x1="12" y1="5" x2="12" y2="19"></line>
-                              <line x1="5" y1="12" x2="19" y2="12"></line>
-                            </svg>
-                         </button>
+                          <input 
+                            type="text" 
+                            value={customAllergen}
+                            onChange={(e) => setCustomAllergen(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && handleAddCustomAllergen()}
+                            placeholder="Other (e.g. Garlic)"
+                            className="w-full bg-white border border-[var(--border-subtle)] rounded-lg py-1.5 px-3 text-xs text-slate-800 focus:border-[var(--gold-400)] focus:outline-none transition-colors"
+                          />
+                          <button 
+                            onClick={handleAddCustomAllergen}
+                            className="bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 rounded-lg px-3 flex items-center justify-center transition-colors"
+                          >
+                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                               <line x1="12" y1="5" x2="12" y2="19"></line>
+                               <line x1="5" y1="12" x2="19" y2="12"></line>
+                             </svg>
+                          </button>
                       </div>
 
                       {/* SHOW CUSTOM ALLERGENS SELECTED */}
@@ -471,8 +522,8 @@ export default function SearchHero({
                                    {custom}
                                    <button onClick={() => handleAllergenChange(custom)} className="hover:text-red-900">
                                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                        <line x1="18" y1="6" x2="6" y2="18" />
-                                        <line x1="6" y1="6" x2="18" y2="18" />
+                                         <line x1="18" y1="6" x2="6" y2="18" />
+                                         <line x1="6" y1="6" x2="18" y2="18" />
                                       </svg>
                                    </button>
                                 </div>

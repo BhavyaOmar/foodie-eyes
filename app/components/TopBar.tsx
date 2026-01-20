@@ -79,6 +79,7 @@ export default function TopBar({ location = "", onReset }: TopBarProps) {
                 width={200}
                 height={180}
                 priority // Added for LCP
+                className="w-24 h-auto sm:w-40 md:w-48 lg:w-56"
               />
             </button>
 
@@ -227,21 +228,38 @@ export default function TopBar({ location = "", onReset }: TopBarProps) {
                       </div>
                     )}
                     
-                    {/* Google Maps Button */}
-                    <button
-                      onClick={() => {
-                        const query = encodeURIComponent(
-                          `${bookmark.name}${bookmark.address ? ` ${bookmark.address}` : ''}`
-                        );
-                        window.open(`http://googleusercontent.com/maps.google.com/6{query}`, '_blank');
-                      }}
-                      className="mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
-                      </svg>
-                      See in Google Maps
-                    </button>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => {
+                          const link = bookmark.link || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${bookmark.name}${bookmark.address ? ` ${bookmark.address}` : ''}`)}`;
+                          window.open(link, '_blank');
+                        }}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                        </svg>
+                        Maps
+                      </button>
+                      <button
+                        onClick={() => {
+                          const link = bookmark.link || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${bookmark.name}${bookmark.address ? ` ${bookmark.address}` : ''}`)}`;
+                          const text = `${bookmark.name}${bookmark.address ? `, ${bookmark.address}` : ''}`;
+                          if (navigator.share) {
+                            navigator.share({ title: bookmark.name, text, url: link }).catch(() => {});
+                          } else {
+                            navigator.clipboard.writeText(link);
+                            alert('Link copied to clipboard');
+                          }
+                        }}
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M4 12a4 4 0 014-4h5a4 4 0 110 8H8a4 4 0 01-4-4zm5-6a3 3 0 100 6h5a3 3 0 100-6H9z"/>
+                        </svg>
+                        Share
+                      </button>
+                    </div>
                   </div>
                   
                   <button
