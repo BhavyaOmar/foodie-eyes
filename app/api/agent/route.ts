@@ -102,34 +102,63 @@ async function searchPlaces(query: string, location: string): Promise<Place[]> {
   });
 }
 
-// --- HELPER 4: Fetch Reviews via Serper ---
-async function getPlaceDetails(place: Place): Promise<Place> {
+// --- HELPER 4: Batch Fetch Reviews via Serper (Optimized) ---
+// Fetches reviews for multiple places in batches to reduce API calls
+async function getPlacesDetailsBatch(places: Place[]): Promise<Place[]> {
   const apiKey = process.env.SERPER_API_KEY;
-  if (!apiKey) return place;
+  if (!apiKey) return places;
 
-  const reviewQuery = `reviews of ${place.title} ${place.address} food menu must try`;
+  const BATCH_SIZE = 4; // Fetch reviews for 4 places in one API call
+  const batches = [];
 
-  try {
-    const response = await fetch("https://google.serper.dev/search", {
-      method: "POST",
-      headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ q: reviewQuery, gl: "in", num: 5 }),
-    });
-
-    const data: SerperResponse = await response.json();
-    
-    const snippets = (data.organic || [])
-      .map(item => `- "${item.snippet}" (Source: ${item.title})`)
-      .join("\n");
-
-    if (snippets.length > 0) {
-      return { ...place, scraped_content: `Public Reviews & Highlights:\n${snippets}` };
-    }
-  } catch (e) {
-    console.warn(`Failed to fetch details for ${place.title}`);
+  // Split places into batches
+  for (let i = 0; i < places.length; i += BATCH_SIZE) {
+    batches.push(places.slice(i, i + BATCH_SIZE));
   }
 
-  return { ...place, scraped_content: "No detailed public reviews found." };
+  console.log(`📦 Fetching reviews in ${batches.length} batch(es) for ${places.length} places...`);
+
+  const enrichedPlaces = await Promise.all(
+    batches.map(async (batch) => {
+      // Create a query that searches for reviews of all places in this batch
+      const placeNames = batch.map(p => p.title).join(" OR ");
+      const reviewQuery = `reviews ${placeNames} restaurant food menu recommendations`;
+
+      try {
+        const response = await fetch("https://google.serper.dev/search", {
+          method: "POST",
+          headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
+          body: JSON.stringify({ q: reviewQuery, gl: "in", num: 20 }), // Fetch 20 results for the batch
+        });
+
+        const data: SerperResponse = await response.json();
+        const allSnippets = (data.organic || [])
+          .map(item => `- "${item.snippet}" (Source: ${item.title})`)
+          .slice(0, 15); // Take top 15 review snippets total
+
+        // Distribute snippets across places in the batch
+        return batch.map((place, idx) => {
+          // Each place gets some of the review snippets
+          const startIdx = Math.floor((idx / batch.length) * allSnippets.length);
+          const endIdx = Math.floor(((idx + 1) / batch.length) * allSnippets.length);
+          const placeSnippets = allSnippets.slice(startIdx, endIdx);
+
+          if (placeSnippets.length > 0) {
+            return {
+              ...place,
+              scraped_content: `Public Reviews & Highlights:\n${placeSnippets.join("\n")}`
+            };
+          }
+          return { ...place, scraped_content: "No detailed public reviews found." };
+        });
+      } catch (e) {
+        console.warn(`Failed to fetch batch reviews`);
+        return batch.map(p => ({ ...p, scraped_content: "No detailed public reviews found." }));
+      }
+    })
+  );
+
+  return enrichedPlaces.flat();
 }
 
 // --- MAIN ROUTE ---
@@ -323,11 +352,9 @@ export async function POST(req: NextRequest) {
     // No need to re-sort by rating - just take top 12
     const topCandidates = places.slice(0, 12);
     
-    console.log(`🗣️ Fetching public reviews for top ${topCandidates.length} candidates...`);
+    console.log(`🗣️ Fetching public reviews for top ${topCandidates.length} candidates in batches...`);
     
-    const enrichedPlaces = await Promise.all(
-      topCandidates.map(place => getPlaceDetails(place))
-    );
+    const enrichedPlaces = await getPlacesDetailsBatch(topCandidates);
 
     // --- STEP 4: GROQ (ANALYZE) ---
     console.log("🧠 Groq Analyzing Reviews...");
